@@ -90,7 +90,7 @@ export function ToolsPanel(props: {
             0.0000001 m
           </Button>
           <Button active={gridStepM === 0.25} onClick={() => setGridStepM(0.25)}>
-           ur gay
+            0.25 m 
           </Button>
           <Button active={gridStepM === 0.5} onClick={() => setGridStepM(0.5)}>
             0.5 m
@@ -113,7 +113,7 @@ export function ToolsPanel(props: {
           <input
             className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
             type="number"
-            min={0}
+            min={8}
             step={0.1}
             value={truss.pylonHeightM}
             onChange={(e) => setPylonHeightM(Number(e.target.value))}
