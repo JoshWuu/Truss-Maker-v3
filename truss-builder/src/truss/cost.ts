@@ -19,7 +19,7 @@ export function computeCost(truss: Truss): CostBreakdown {
 
   const memberCost = 12 * totalMemberLengthM
   const jointCost = 3 * truss.joints.length
-  const pylonCost = 6 * Math.max(0, truss.pylonHeightM || 0)
+  const pylonCost = 12 * Math.max(0, truss.pylonHeightM || 0)
   const ropeCount = truss.joints.filter((j) => j.loadYkN !== 0).length
   const ropeCost = 4 * ropeCount
   const totalCost = memberCost + jointCost + pylonCost + ropeCost
