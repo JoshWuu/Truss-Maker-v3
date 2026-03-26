@@ -86,8 +86,8 @@ export function ToolsPanel(props: {
           Grid
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Button active={gridStepM === 0.1} onClick={() => setGridStepM(0.1)}>
-            0.1 m
+          <Button active={gridStepM === 0.001} onClick={() => setGridStepM(0.01)}>
+            0.001 m
           </Button>
           <Button active={gridStepM === 0.25} onClick={() => setGridStepM(0.25)}>
             0.25 m
