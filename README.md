@@ -120,19 +120,19 @@ Josh Wu
 ## Screenshots
 
 ### Main Canvas
-![Main Canvas](image.png)
+![Main Canvas](truss-builder/image.png)
 
 ### Joint Placement and Precision Controls
-![Joint Controls](image-1.png)
+![Joint Controls](truss-builder/image-1.png)
 
 ### Structural Analysis View
-![Analysis](image-2.png)
+![Analysis](truss-builder/image-2.png)
 
 ### Cost Breakdown Panel
-![Cost Panel](image-3.png)
+![Cost Panel](truss-builder/image-3.png)
 
 ### Constraint Validation
-![Constraints](image-4.png)
+![Constraints](truss-builder/image-4.png)
 ---
 ## Notes
 
