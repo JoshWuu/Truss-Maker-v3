@@ -35,6 +35,7 @@ export function StatsPanel(props: {
   } = props
   const [localEditX, setLocalEditX] = useState<string | null>(null)
   const [localEditY, setLocalEditY] = useState<string | null>(null)
+  const [tableEdits, setTableEdits] = useState<Record<string, { x: string; y: string }>>({})
   const precision = precisionProp
   const setPrecision = onPrecisionChange || (() => {})
   const n = truss.joints.length
@@ -135,6 +136,88 @@ export function StatsPanel(props: {
             </select>
           </div>
         </div>
+
+        <div className="mb-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Joint coordinate table
+          </div>
+          <div className="max-h-44 overflow-auto rounded-md border border-slate-200 bg-white">
+            <table className="min-w-full text-xs">
+              <thead className="sticky top-0 bg-slate-100 text-slate-700">
+                <tr>
+                  <th className="border p-1 text-left">Joint</th>
+                  <th className="border p-1 text-left">X (m)</th>
+                  <th className="border p-1 text-left">Y (m)</th>
+                  <th className="border p-1 text-left">Support</th>
+                </tr>
+              </thead>
+              <tbody>
+                {truss.joints.map((joint) => {
+                  const rowDraft = tableEdits[joint.id] || {
+                    x: formatCoordinate(joint.x, precision),
+                    y: formatCoordinate(joint.y, precision),
+                  }
+
+                  const commitCoordinate = (newX: string, newY: string) => {
+                    const parsedX = parseCoordinate(newX)
+                    const parsedY = parseCoordinate(newY)
+                    if (!onUpdateJointCoordinate || parsedX === null || parsedY === null) return
+                    onUpdateJointCoordinate(joint.id, parsedX, parsedY)
+                    setTableEdits((prev) => {
+                      const next = { ...prev }
+                      delete next[joint.id]
+                      return next
+                    })
+                  }
+
+                  return (
+                    <tr key={joint.id} className="border-b">
+                      <td className="border p-1">{joint.label}</td>
+                      <td className="border p-1">
+                        <input
+                          className="w-full rounded border border-slate-300 px-1 text-xs"
+                          value={rowDraft.x}
+                          onChange={(e) =>
+                            setTableEdits((prev) => ({
+                              ...prev,
+                              [joint.id]: { ...rowDraft, x: e.target.value },
+                            }))
+                          }
+                          onBlur={(e) => commitCoordinate(e.target.value, rowDraft.y)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              commitCoordinate(e.currentTarget.value, rowDraft.y)
+                            }
+                          }}
+                        />
+                      </td>
+                      <td className="border p-1">
+                        <input
+                          className="w-full rounded border border-slate-300 px-1 text-xs"
+                          value={rowDraft.y}
+                          onChange={(e) =>
+                            setTableEdits((prev) => ({
+                              ...prev,
+                              [joint.id]: { ...rowDraft, y: e.target.value },
+                            }))
+                          }
+                          onBlur={(e) => commitCoordinate(rowDraft.x, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              commitCoordinate(rowDraft.x, e.currentTarget.value)
+                            }
+                          }}
+                        />
+                      </td>
+                      <td className="border p-1">{joint.support}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div className="rounded-md border border-slate-200 p-2 text-xs text-slate-600">
           {selected.jointId ? (
             <div className="space-y-3">
