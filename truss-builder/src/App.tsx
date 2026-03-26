@@ -150,7 +150,14 @@ function App() {
       commitTruss({ ...truss, members: truss.members.filter((m) => m.id !== id) })
     }
   }, [commitTruss, selected.jointId, selected.memberId, truss])
-
+  const addJoint = useCallback((x: number, y: number) => {
+    const id = globalThis.crypto?.randomUUID?.() ?? `j_${Date.now()}_${Math.random().toString(16).slice(2)}`
+    commitTruss({
+      ...truss,
+      joints: [...truss.joints, { id, label: '?', x, y, support: 'none', loadYkN: 0 }],
+    })
+    setSelected({ jointId: id, memberId: null })
+  }, [commitTruss, truss])
   const updateJointCoordinate = useCallback(
     (jointId: string, x: number, y: number) => {
       commitTrussFrom(
@@ -272,6 +279,7 @@ function App() {
           selected={selected}
           deleteSelected={deleteSelected}
           onUpdateJointCoordinate={updateJointCoordinate}
+          onAddJoint={addJoint}
           precision={precision}
           onPrecisionChange={setPrecision}
         />

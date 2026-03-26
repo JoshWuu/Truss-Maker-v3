@@ -19,6 +19,7 @@ export function StatsPanel(props: {
   selected: { jointId: string | null; memberId: string | null }
   deleteSelected: () => void
   onUpdateJointCoordinate?: (jointId: string, x: number, y: number) => void
+  onAddJoint?: (x: number, y: number) => void
   precision?: PrecisionLevel
   onPrecisionChange?: (p: PrecisionLevel) => void
 }) {
@@ -30,12 +31,15 @@ export function StatsPanel(props: {
     selected,
     deleteSelected,
     onUpdateJointCoordinate,
+    onAddJoint,
     precision: precisionProp = 3,
     onPrecisionChange,
   } = props
   const [localEditX, setLocalEditX] = useState<string | null>(null)
   const [localEditY, setLocalEditY] = useState<string | null>(null)
   const [tableEdits, setTableEdits] = useState<Record<string, { x: string; y: string }>>({})
+  const [newJointX, setNewJointX] = useState<string>(formatCoordinate(0, precisionProp))
+  const [newJointY, setNewJointY] = useState<string>(formatCoordinate(0, precisionProp))
   const precision = precisionProp
   const setPrecision = onPrecisionChange || (() => {})
   const n = truss.joints.length
@@ -213,6 +217,39 @@ export function StatsPanel(props: {
                     </tr>
                   )
                 })}
+                <tr className="border-t border-slate-300 bg-slate-50">
+                  <td className="border p-1 text-slate-600">New</td>
+                  <td className="border p-1">
+                    <input
+                      className="w-full rounded border border-slate-300 px-1 text-xs"
+                      value={newJointX}
+                      onChange={(e) => setNewJointX(e.target.value)}
+                    />
+                  </td>
+                  <td className="border p-1">
+                    <input
+                      className="w-full rounded border border-slate-300 px-1 text-xs"
+                      value={newJointY}
+                      onChange={(e) => setNewJointY(e.target.value)}
+                    />
+                  </td>
+                  <td className="border p-1">
+                    <button
+                      className="rounded bg-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-300"
+                      onClick={() => {
+                        if (!onAddJoint) return
+                        const parsedX = parseCoordinate(newJointX)
+                        const parsedY = parseCoordinate(newJointY)
+                        if (parsedX === null || parsedY === null) return
+                        onAddJoint(parsedX, parsedY)
+                        setNewJointX(formatCoordinate(0, precision))
+                        setNewJointY(formatCoordinate(0, precision))
+                      }}
+                    >
+                      Add
+                    </button>
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
