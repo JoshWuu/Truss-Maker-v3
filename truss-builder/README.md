@@ -120,24 +120,19 @@ Josh Wu
 ## Screenshots
 
 ### Main Canvas
-
-[alt text](image.png)
+![Main Canvas](image.png)
 
 ### Joint Placement and Precision Controls
+![Joint Controls](image-1.png)
 
-[alt text](image-1.png
 ### Structural Analysis View
-
-![Analysis](![alt text](image-2.png))
+![Analysis](image-2.png)
 
 ### Cost Breakdown Panel
-
-![Cost Panel](![alt text](image-3.png))
+![Cost Panel](image-3.png)
 
 ### Constraint Validation
-
-![Constraints](![alt text](image-4.png))
-
+![Constraints](image-4.png)
 ---
 ## Notes
 
