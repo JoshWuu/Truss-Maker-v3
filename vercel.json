@@ -1,8 +1,6 @@
 {
-  "root": "truss-builder",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
+  "buildCommand": "cd truss-builder && npm install && npm run build",
+  "outputDirectory": "truss-builder/dist",
   "framework": "vite",
   "rewrites": [
     {
