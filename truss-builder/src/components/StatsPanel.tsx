@@ -1,7 +1,11 @@
+import { useState } from 'react'
 import type { AnalysisResult, Truss } from '../truss/types'
 import type { CostBreakdown } from '../truss/cost'
 import type { ConstraintSummary } from '../truss/constraints'
+import type { PrecisionLevel } from '../truss/precision'
+import { PRECISION_LEVELS, formatCoordinate, parseCoordinate } from '../truss/precision'
 import { Button } from './Button'
+import { MathPanel } from './MathPanel'
 
 function money(n: number): string {
   return `$${n.toFixed(2)}`
@@ -14,8 +18,25 @@ export function StatsPanel(props: {
   analysis: AnalysisResult
   selected: { jointId: string | null; memberId: string | null }
   deleteSelected: () => void
+  onUpdateJointCoordinate?: (jointId: string, x: number, y: number) => void
+  precision?: PrecisionLevel
+  onPrecisionChange?: (p: PrecisionLevel) => void
 }) {
-  const { truss, cost, constraints, analysis, selected, deleteSelected } = props
+  const {
+    truss,
+    cost,
+    constraints,
+    analysis,
+    selected,
+    deleteSelected,
+    onUpdateJointCoordinate,
+    precision: precisionProp = 3,
+    onPrecisionChange,
+  } = props
+  const [localEditX, setLocalEditX] = useState<string | null>(null)
+  const [localEditY, setLocalEditY] = useState<string | null>(null)
+  const precision = precisionProp
+  const setPrecision = onPrecisionChange || (() => {})
   const n = truss.joints.length
   const m = truss.members.length
   const memberById = new Map(truss.members.map((mm) => [mm.id, mm]))
@@ -98,13 +119,108 @@ export function StatsPanel(props: {
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Selection
         </div>
+        <div className="mb-3 space-y-2">
+          <div>
+            <label className="text-xs font-medium text-slate-600">Precision (decimal places)</label>
+            <select
+              value={precision}
+              onChange={(e) => setPrecision(parseInt(e.target.value) as PrecisionLevel)}
+              className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            >
+              {PRECISION_LEVELS.map((p) => (
+                <option key={p} value={p}>
+                  {p} decimal place{p !== 1 ? 's' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div className="rounded-md border border-slate-200 p-2 text-xs text-slate-600">
           {selected.jointId ? (
-            <div>
-              Joint:{' '}
-              <span className="font-semibold text-slate-900">
-                {jointById.get(selected.jointId)?.label ?? selected.jointId}
-              </span>
+            <div className="space-y-3">
+              <div>
+                <strong>Joint:</strong>{' '}
+                <span className="font-semibold text-slate-900">
+                  {jointById.get(selected.jointId)?.label ?? selected.jointId}
+                </span>
+              </div>
+              {(() => {
+                const joint = jointById.get(selected.jointId)
+                if (!joint) return null
+                return (
+                  <div className="space-y-2 rounded-md bg-slate-50 p-2">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-medium text-slate-700">X:</label>
+                      <input
+                        type="text"
+                        value={
+                          localEditX !== null
+                            ? localEditX
+                            : formatCoordinate(joint.x, precision)
+                        }
+                        onChange={(e) => setLocalEditX(e.target.value)}
+                        onBlur={(e) => {
+                          const parsed = parseCoordinate(e.target.value)
+                          if (parsed !== null && onUpdateJointCoordinate && selected.jointId) {
+                            onUpdateJointCoordinate(selected.jointId, parsed, joint.y)
+                          }
+                          setLocalEditX(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const parsed = parseCoordinate(e.currentTarget.value)
+                            if (parsed !== null && onUpdateJointCoordinate && selected.jointId) {
+                              onUpdateJointCoordinate(selected.jointId, parsed, joint.y)
+                            }
+                            setLocalEditX(null)
+                          } else if (e.key === 'Escape') {
+                            setLocalEditX(null)
+                          }
+                        }}
+                        className="flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-slate-900"
+                      />
+                      <span className="text-xs text-slate-500">m</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-medium text-slate-700">Y:</label>
+                      <input
+                        type="text"
+                        value={
+                          localEditY !== null
+                            ? localEditY
+                            : formatCoordinate(joint.y, precision)
+                        }
+                        onChange={(e) => setLocalEditY(e.target.value)}
+                        onBlur={(e) => {
+                          const parsed = parseCoordinate(e.target.value)
+                          if (parsed !== null && onUpdateJointCoordinate && selected.jointId) {
+                            onUpdateJointCoordinate(selected.jointId, joint.x, parsed)
+                          }
+                          setLocalEditY(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const parsed = parseCoordinate(e.currentTarget.value)
+                            if (parsed !== null && onUpdateJointCoordinate && selected.jointId) {
+                              onUpdateJointCoordinate(selected.jointId, joint.x, parsed)
+                            }
+                            setLocalEditY(null)
+                          } else if (e.key === 'Escape') {
+                            setLocalEditY(null)
+                          }
+                        }}
+                        className="flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-slate-900"
+                      />
+                      <span className="text-xs text-slate-500">m</span>
+                    </div>
+                  </div>
+                )
+              })()}
+              <div>
+                <Button disabled onClick={deleteSelected} className="w-full">
+                  Delete selected
+                </Button>
+              </div>
             </div>
           ) : selected.memberId ? (
             <div>
@@ -118,23 +234,26 @@ export function StatsPanel(props: {
                   return `${a}-${b}`
                 })()}
               </span>
+              <div className="mt-2">
+                <Button onClick={deleteSelected} className="w-full">
+                  Delete selected
+                </Button>
+              </div>
             </div>
           ) : (
             <div>Nothing selected.</div>
           )}
-          <div className="mt-2">
-            <Button
-              disabled={!selected.jointId && !selected.memberId}
-              onClick={deleteSelected}
-              className="w-full"
-            >
-              Delete selected
-            </Button>
-          </div>
         </div>
       </div>
 
       <div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Mathematics
+        </div>
+        <MathPanel truss={truss} analysis={analysis} precision={precision} />
+      </div>
+
+      <div className="mt-4">
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Analysis (method of joints)
         </div>

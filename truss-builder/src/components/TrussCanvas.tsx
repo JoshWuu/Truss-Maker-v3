@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AnalysisResult, JointId, ToolMode, Truss } from '../truss/types'
 import { clamp, jointById, memberLengthM, snap } from '../truss/geometry'
 import type { ConstraintSummary } from '../truss/constraints'
+import { formatCoordinate } from '../truss/precision'
 
 type ViewBox = { x: number; y: number; w: number; h: number }
 
@@ -136,6 +137,7 @@ export function TrussCanvas(props: {
 
   const gridMinor = gridStepM
   const gridMajor = 2 * gridStepM
+  const gridFine = Math.max(gridStepM / 5, 0.001) // Ensure non-zero for very small grid steps
 
   const onWheel: React.WheelEventHandler<SVGSVGElement> = (e) => {
     e.preventDefault()
@@ -369,11 +371,20 @@ export function TrussCanvas(props: {
       >
         <defs>
           <pattern
+            id="fineGrid"
+            width={gridFine}
+            height={gridFine}
+            patternUnits="userSpaceOnUse"
+          >
+            <path d={`M ${gridFine} 0 L 0 0 0 ${gridFine}`} fill="none" stroke="#f1f5f9" strokeWidth={0.01} />
+          </pattern>
+          <pattern
             id="minorGrid"
             width={gridMinor}
             height={gridMinor}
             patternUnits="userSpaceOnUse"
           >
+            <rect width={gridMinor} height={gridMinor} fill="url(#fineGrid)" />
             <path d={`M ${gridMinor} 0 L 0 0 0 ${gridMinor}`} fill="none" stroke="#e2e8f0" strokeWidth={0.02} />
           </pattern>
           <pattern
@@ -488,12 +499,23 @@ export function TrussCanvas(props: {
                 r={0.18}
                 fill={isMemberStart ? '#fde68a' : 'white'}
                 stroke={isSelected ? '#f59e0b' : jointColor}
-                strokeWidth={0.08}
+                strokeWidth={isSelected ? 0.15 : 0.08}
                 onPointerDown={onJointPointerDown(j.id)}
                 onClick={onJointClick(j.id)}
               />
-              <text x={j.x + 0.25} y={j.y - 0.25} fontSize={0.35} fill="#0f172a">
-                {jointLabelById.get(j.id) ?? '?'} ({j.x.toFixed(1)}, {j.y.toFixed(1)})
+              {isSelected && (
+                <circle
+                  cx={j.x}
+                  cy={j.y}
+                  r={0.3}
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth={0.06}
+                  opacity={0.5}
+                />
+              )}
+              <text x={j.x + 0.3} y={j.y - 0.3} fontSize={0.32} fill="#0f172a" fontWeight="500">
+                {jointLabelById.get(j.id) ?? '?'} ({formatCoordinate(j.x, 2)}, {formatCoordinate(j.y, 2)})
               </text>
             </g>
           )

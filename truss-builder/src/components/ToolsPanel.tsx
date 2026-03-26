@@ -1,16 +1,21 @@
 import { Button } from './Button'
 import type { ToolMode, Truss } from '../truss/types'
+import type { StepSize } from '../truss/precision'
+import { STEP_SIZES } from '../truss/precision'
 
 export function ToolsPanel(props: {
   tool: ToolMode
   setTool: (t: ToolMode) => void
   gridStepM: number
   setGridStepM: (n: number) => void
+  moveStepM: StepSize
+  setMoveStepM: (n: StepSize) => void
   truss: Truss
   setPylonHeightM: (n: number) => void
   exportJson: () => void
   exportSvg: () => void
   exportPng: () => void
+  exportCalculations: () => void
   autoMembers: () => void
   undo: () => void
   redo: () => void
@@ -23,11 +28,14 @@ export function ToolsPanel(props: {
     setTool,
     gridStepM,
     setGridStepM,
+    moveStepM,
+    setMoveStepM,
     truss,
     setPylonHeightM,
     exportJson,
     exportSvg,
     exportPng,
+    exportCalculations,
     autoMembers,
     undo,
     redo,
@@ -106,6 +114,26 @@ export function ToolsPanel(props: {
 
       <div className="mb-4 space-y-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Arrow Key Step
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {STEP_SIZES.map((step) => (
+            <Button
+              key={step}
+              active={moveStepM === step}
+              onClick={() => setMoveStepM(step)}
+            >
+              {step} m
+            </Button>
+          ))}
+        </div>
+        <div className="text-xs text-slate-500">
+          Select a joint and use arrow keys to move it with chosen precision.
+        </div>
+      </div>
+
+      <div className="mb-4 space-y-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Cost inputs
         </div>
         <label className="block text-xs text-slate-600">
@@ -130,6 +158,9 @@ export function ToolsPanel(props: {
           <Button onClick={exportSvg}>SVG</Button>
           <Button onClick={exportPng}>PNG</Button>
         </div>
+        <Button className="w-full" onClick={exportCalculations}>
+          Export Calculations
+        </Button>
         <Button className="w-full" onClick={clearAll}>
           Clear all
         </Button>

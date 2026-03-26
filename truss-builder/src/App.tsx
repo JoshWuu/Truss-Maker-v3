@@ -3,15 +3,20 @@ import { ToolsPanel } from './components/ToolsPanel'
 import { StatsPanel } from './components/StatsPanel'
 import { TrussCanvas } from './components/TrussCanvas'
 import type { ToolMode, Truss } from './truss/types'
+import type { StepSize, PrecisionLevel } from './truss/precision'
 import { indexToLabel } from './truss/labels'
 import { computeCost } from './truss/cost'
 import { computeConstraints } from './truss/constraints'
 import { analyzeTruss } from './truss/solver'
 import { autoAddMembers } from './truss/autoMembers'
+import { roundToStep } from './truss/precision'
+import { downloadCalculations } from './truss/export'
 
 function App() {
   const [tool, setTool] = useState<ToolMode>('joint')
   const [gridStepM, setGridStepM] = useState(0.5)
+  const [moveStepM, setMoveStepM] = useState<StepSize>(0.1)
+  const [precision, setPrecision] = useState<PrecisionLevel>(3)
   const [selected, setSelected] = useState<{ jointId: string | null; memberId: string | null }>({
     jointId: null,
     memberId: null,
@@ -79,19 +84,54 @@ function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       const isMac = navigator.platform.toLowerCase().includes('mac')
       const mod = isMac ? e.metaKey : e.ctrlKey
-      if (!mod) return
-      if (e.key.toLowerCase() === 'z') {
+      if (mod) {
+        if (e.key.toLowerCase() === 'z') {
+          e.preventDefault()
+          if (e.shiftKey) redo()
+          else undo()
+        } else if (e.key.toLowerCase() === 'y') {
+          e.preventDefault()
+          redo()
+        }
+      }
+
+      // Arrow key movement for selected joint
+      if (selected.jointId && !mod) {
+        const joint = truss.joints.find((j) => j.id === selected.jointId)
+        if (!joint) return
+
+        let dx = 0
+        let dy = 0
+        switch (e.key) {
+          case 'ArrowLeft':
+            dx = -moveStepM
+            break
+          case 'ArrowRight':
+            dx = moveStepM
+            break
+          case 'ArrowUp':
+            dy = -moveStepM
+            break
+          case 'ArrowDown':
+            dy = moveStepM
+            break
+          default:
+            return
+        }
+
         e.preventDefault()
-        if (e.shiftKey) redo()
-        else undo()
-      } else if (e.key.toLowerCase() === 'y') {
-        e.preventDefault()
-        redo()
+        // Inline coordinate update to avoid circular dependency
+        const newX = roundToStep(joint.x + dx, moveStepM)
+        const newY = roundToStep(joint.y + dy, moveStepM)
+        commitTrussFrom(truss, {
+          ...truss,
+          joints: truss.joints.map((j) => (j.id === selected.jointId ? { ...j, x: newX, y: newY } : j)),
+        })
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [redo, undo])
+  }, [redo, undo, selected.jointId, truss, moveStepM, commitTrussFrom])
 
   const deleteSelected = useCallback(() => {
     if (selected.jointId) {
@@ -110,6 +150,19 @@ function App() {
       commitTruss({ ...truss, members: truss.members.filter((m) => m.id !== id) })
     }
   }, [commitTruss, selected.jointId, selected.memberId, truss])
+
+  const updateJointCoordinate = useCallback(
+    (jointId: string, x: number, y: number) => {
+      commitTrussFrom(
+        truss,
+        {
+          ...truss,
+          joints: truss.joints.map((j) => (j.id === jointId ? { ...j, x, y } : j)),
+        }
+      )
+    },
+    [commitTrussFrom, truss]
+  )
 
   const cost = useMemo(() => computeCost(truss), [truss])
   const analysis = useMemo(() => analyzeTruss(truss), [truss])
@@ -165,6 +218,10 @@ function App() {
     })
   }
 
+  const exportCalculations = () => {
+    downloadCalculations(truss, analysis, precision)
+  }
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-slate-100 text-slate-900">
       <div className="flex h-full min-h-0">
@@ -173,6 +230,8 @@ function App() {
           setTool={setTool}
           gridStepM={gridStepM}
           setGridStepM={setGridStepM}
+          moveStepM={moveStepM}
+          setMoveStepM={setMoveStepM}
           truss={truss}
           setPylonHeightM={(n) =>
             commitTruss({ ...truss, pylonHeightM: Math.max(0, n || 0) })
@@ -180,6 +239,7 @@ function App() {
           exportJson={exportJson}
           exportSvg={exportSvg}
           exportPng={exportPng}
+          exportCalculations={exportCalculations}
           autoMembers={autoMembers}
           undo={undo}
           redo={redo}
@@ -211,6 +271,9 @@ function App() {
           analysis={analysis}
           selected={selected}
           deleteSelected={deleteSelected}
+          onUpdateJointCoordinate={updateJointCoordinate}
+          precision={precision}
+          onPrecisionChange={setPrecision}
         />
       </div>
     </div>
