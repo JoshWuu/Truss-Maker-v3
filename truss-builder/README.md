@@ -125,19 +125,18 @@ Josh Wu
 
 ### Joint Placement and Precision Controls
 
-![Joint Controls](![alt text](image-1.png))
-
+(image-1.png)
 ### Structural Analysis View
 
-![Analysis](![alt text](image-2.png))
+(image-2.png)
 
 ### Cost Breakdown Panel
 
-![Cost Panel](![alt text](image-3.png))
+(image-3.png)
 
 ### Constraint Validation
 
-![Constraints](![alt text](image-4.png))
+(image-4.png)
 
 ---
 ## Notes
