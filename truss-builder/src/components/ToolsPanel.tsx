@@ -2,6 +2,46 @@ import { Button } from './Button'
 import type { ToolMode, Truss } from '../truss/types'
 import type { StepSize } from '../truss/precision'
 import { STEP_SIZES } from '../truss/precision'
+import {
+  IconCursor,
+  IconCircleDot,
+  IconLine,
+  IconTriangleSupport,
+  IconArrowDown,
+  IconUndo,
+  IconRedo,
+  IconWand,
+  IconDownload,
+  IconTrash,
+  IconX,
+} from './icons'
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+      {children}
+    </p>
+  )
+}
+
+function Divider() {
+  return <div className="border-t border-slate-100" />
+}
+
+const TOOL_CONFIG: { mode: ToolMode; label: string; icon: React.ReactNode }[] = [
+  { mode: 'select', label: 'Select', icon: <IconCursor className="w-4 h-4" /> },
+  { mode: 'joint', label: 'Joint', icon: <IconCircleDot className="w-4 h-4" /> },
+  { mode: 'member', label: 'Member', icon: <IconLine className="w-4 h-4" /> },
+  { mode: 'support', label: 'Support', icon: <IconTriangleSupport className="w-4 h-4" /> },
+  { mode: 'load', label: 'Load', icon: <IconArrowDown className="w-4 h-4" /> },
+]
+
+const GRID_OPTIONS: { value: number; label: string }[] = [
+  { value: 0.0000001, label: 'Free' },
+  { value: 0.25, label: '0.25 m' },
+  { value: 0.5, label: '0.5 m' },
+  { value: 1, label: '1.0 m' },
+]
 
 export function ToolsPanel(props: {
   tool: ToolMode
@@ -16,156 +56,160 @@ export function ToolsPanel(props: {
   exportSvg: () => void
   exportPng: () => void
   exportCalculations: () => void
+  exportPdfLatex: () => void
   autoMembers: () => void
   undo: () => void
   redo: () => void
   canUndo: boolean
   canRedo: boolean
   clearAll: () => void
+  pdfStatus: string | null
+  onClose?: () => void
 }) {
   const {
-    tool,
-    setTool,
-    gridStepM,
-    setGridStepM,
-    moveStepM,
-    setMoveStepM,
-    truss,
-    setPylonHeightM,
-    exportJson,
-    exportSvg,
-    exportPng,
-    exportCalculations,
-    autoMembers,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    clearAll,
+    tool, setTool, gridStepM, setGridStepM, moveStepM, setMoveStepM,
+    truss, setPylonHeightM, exportJson, exportSvg, exportPng,
+    exportCalculations, exportPdfLatex, autoMembers, undo, redo, canUndo, canRedo,
+    clearAll, pdfStatus, onClose,
   } = props
 
   return (
-    <div className="h-full w-72 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-3">
-      <div className="mb-3">
-        <div className="text-sm font-semibold text-slate-900">Truss Builder</div>
-        <div className="text-xs text-slate-500">MTE119 MVP</div>
+    <div className="relative flex h-full w-full flex-col overflow-y-auto bg-white">
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-900">Truss Builder</div>
+          <div className="text-[11px] text-slate-400">built by Waterloo students for Waterloo students</div>
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          >
+            <IconX className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <div className="mb-4 space-y-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Tools
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button disabled={!canUndo} onClick={undo}>
-            Undo
-          </Button>
-          <Button disabled={!canRedo} onClick={redo}>
-            Redo
-          </Button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button active={tool === 'select'} onClick={() => setTool('select')}>
-            Select
-          </Button>
-          <Button active={tool === 'joint'} onClick={() => setTool('joint')}>
-            Add joint
-          </Button>
-          <Button active={tool === 'member'} onClick={() => setTool('member')}>
-            Add member
-          </Button>
-          <Button active={tool === 'support'} onClick={() => setTool('support')}>
-            Support
-          </Button>
-          <Button active={tool === 'load'} onClick={() => setTool('load')}>
-            Load
-          </Button>
-        </div>
-        <div className="text-xs text-slate-500">
-          - **Select tool**: click a joint/member, then delete.
-          <br />
-          - **Drag**: drag joints to reposition (snaps to grid).
-          <br />
-          - **Pan/zoom**: drag background to pan, mousewheel to zoom.
-        </div>
-      </div>
-
-      <div className="mb-4 space-y-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Grid
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button active={gridStepM === 0.0000001} onClick={() => setGridStepM(0.0000001)}>
-            0.0000001 m
-          </Button>
-          <Button active={gridStepM === 0.25} onClick={() => setGridStepM(0.25)}>
-            0.25 m 
-          </Button>
-          <Button active={gridStepM === 0.5} onClick={() => setGridStepM(0.5)}>
-            0.5 m
-          </Button>
-          <Button active={gridStepM === 1} onClick={() => setGridStepM(1)}>
-            1.0 m
-          </Button>
-        </div>
-        <Button className="w-full" onClick={autoMembers}>
-          Auto add members
-        </Button>
-      </div>
-
-      <div className="mb-4 space-y-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Arrow Key Step
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {STEP_SIZES.map((step) => (
-            <Button
-              key={step}
-              active={moveStepM === step}
-              onClick={() => setMoveStepM(step)}
-            >
-              {step} m
+      <div className="flex flex-col gap-5 p-4">
+        {/* History */}
+        <div className="space-y-2">
+          <SectionLabel>History</SectionLabel>
+          <div className="grid grid-cols-2 gap-2">
+            <Button disabled={!canUndo} onClick={undo}>
+              <IconUndo className="h-4 w-4" /> Undo
             </Button>
-          ))}
+            <Button disabled={!canRedo} onClick={redo}>
+              <IconRedo className="h-4 w-4" /> Redo
+            </Button>
+          </div>
         </div>
-        <div className="text-xs text-slate-500">
-          Select a joint and use arrow keys to move it with chosen precision.
-        </div>
-      </div>
 
-      <div className="mb-4 space-y-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Cost inputs
-        </div>
-        <label className="block text-xs text-slate-600">
-          Pylon height (m)
-          <input
-            className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
-            type="number"
-            min={8}
-            step={0.1}
-            value={truss.pylonHeightM}
-            onChange={(e) => setPylonHeightM(Number(e.target.value))}
-          />
-        </label>
-      </div>
+        <Divider />
 
-      <div className="space-y-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Export
+        {/* Tools */}
+        <div className="space-y-2">
+          <SectionLabel>Tools</SectionLabel>
+          <div className="grid grid-cols-2 gap-2">
+            {TOOL_CONFIG.map(({ mode, label, icon }) => (
+              <Button key={mode} active={tool === mode} onClick={() => setTool(mode)}>
+                {icon} {label}
+              </Button>
+            ))}
+          </div>
+          <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500 space-y-1 leading-relaxed">
+            <div><strong className="font-semibold text-slate-600">Select</strong> — click joint or member to select, then delete</div>
+            <div><strong className="font-semibold text-slate-600">Drag</strong> — drag joints to reposition (snaps to grid)</div>
+            <div><strong className="font-semibold text-slate-600">Pan / Zoom</strong> — drag background · scroll wheel · pinch</div>
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button onClick={exportJson}>JSON</Button>
-          <Button onClick={exportSvg}>SVG</Button>
-          <Button onClick={exportPng}>PNG</Button>
+
+        <Divider />
+
+        {/* Grid snap */}
+        <div className="space-y-2">
+          <SectionLabel>Grid Snap</SectionLabel>
+          <div className="grid grid-cols-2 gap-2">
+            {GRID_OPTIONS.map(({ value, label }) => (
+              <Button key={value} active={gridStepM === value} onClick={() => setGridStepM(value)}>
+                {label}
+              </Button>
+            ))}
+          </div>
+          <Button className="w-full" onClick={autoMembers}>
+            <IconWand className="h-4 w-4" /> Auto Add Members
+          </Button>
         </div>
-        <Button className="w-full" onClick={exportCalculations}>
-          Export Calculations
-        </Button>
-        <Button className="w-full" onClick={clearAll}>
-          Clear all
-        </Button>
+
+        <Divider />
+
+        {/* Arrow key step */}
+        <div className="space-y-2">
+          <SectionLabel>Arrow Key Step</SectionLabel>
+          <div className="grid grid-cols-2 gap-2">
+            {STEP_SIZES.map((step) => (
+              <Button key={step} active={moveStepM === step} onClick={() => setMoveStepM(step)}>
+                {step} m
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400">
+            Select a joint then use arrow keys to nudge it precisely.
+          </p>
+        </div>
+
+        <Divider />
+
+        {/* Cost inputs */}
+        <div className="space-y-2">
+          <SectionLabel>Cost Inputs</SectionLabel>
+
+          {/* Pylon height */}
+          <label className="block text-xs font-medium text-slate-600">
+            Pylon height (m)
+            <input
+              className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-colors focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              type="number"
+              min={0}
+              step={0.1}
+              value={truss.pylonHeightM}
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => setPylonHeightM(Number(e.target.value))}
+            />
+          </label>
+
+        </div>
+
+        <Divider />
+
+        {/* Export */}
+        <div className="space-y-2">
+          <SectionLabel>Export</SectionLabel>
+          <div className="grid grid-cols-3 gap-2">
+            <Button onClick={exportJson}>JSON</Button>
+            <Button onClick={exportSvg}>SVG</Button>
+            <Button onClick={exportPng}>PNG</Button>
+          </div>
+          <Button className="w-full" onClick={exportCalculations}>
+            <IconDownload className="h-4 w-4" /> Export Calculations
+          </Button>
+
+          {/* PDF / LaTeX export */}
+          <Button className="w-full" onClick={exportPdfLatex}>
+            <IconDownload className="h-4 w-4" /> Export as PDF (LaTeX)
+          </Button>
+          {pdfStatus && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 whitespace-pre-wrap">
+              {pdfStatus}
+            </div>
+          )}
+
+          <Button className="w-full" variant="danger" onClick={clearAll}>
+            <IconTrash className="h-4 w-4" /> Clear All
+          </Button>
+        </div>
       </div>
     </div>
   )
 }
-

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ToolsPanel } from './components/ToolsPanel'
 import { StatsPanel } from './components/StatsPanel'
 import { TrussCanvas } from './components/TrussCanvas'
-import type { ToolMode, Truss } from './truss/types'
+import type { CostRates, ToolMode, Truss } from './truss/types'
+import { DEFAULT_COST_RATES } from './truss/types'
 import type { StepSize, PrecisionLevel } from './truss/precision'
 import { indexToLabel } from './truss/labels'
 import { computeCost } from './truss/cost'
@@ -11,12 +13,155 @@ import { analyzeTruss } from './truss/solver'
 import { autoAddMembers } from './truss/autoMembers'
 import { roundToStep } from './truss/precision'
 import { downloadCalculations } from './truss/export'
+import { exportLatexReport } from './truss/latex'
+import {
+  IconCursor,
+  IconCircleDot,
+  IconLine,
+  IconTriangleSupport,
+  IconArrowDown,
+  IconUndo,
+  IconRedo,
+  IconBarChart,
+  IconMenu,
+  IconSettings,
+} from './components/icons'
+
+// ─── Cost rates floating widget ──────────────────────────────────────────────
+
+function CostRatesWidget(props: { costRates: CostRates; setCostRates: (r: CostRates) => void }) {
+  const { costRates, setCostRates } = props
+  const [open, setOpen] = useState(false)
+
+  const rates: { key: keyof CostRates; label: string }[] = [
+    { key: 'memberPerM', label: 'Member ($/m)' },
+    { key: 'perJoint',   label: 'Joint ($ each)' },
+    { key: 'pylonPerM',  label: 'Pylon ($/m)' },
+    { key: 'perRope',    label: 'Rope ($ each)' },
+  ]
+
+  return (
+    <div className="absolute bottom-[5.5rem] right-3 lg:bottom-10 z-40 flex flex-col items-end gap-2">
+      {open && (
+        <div className="rounded-xl border border-slate-200 bg-white shadow-lg p-3 space-y-2 w-52">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-1">
+            Rates ($ per unit)
+          </p>
+          {rates.map(({ key, label }) => (
+            <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
+              <span className="shrink-0">{label}</span>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={costRates[key]}
+                onChange={(e) =>
+                  setCostRates({ ...costRates, [key]: Math.max(0, Number(e.target.value)) })
+                }
+                className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-sm font-mono text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+            </label>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={[
+          'rounded-xl border p-2 shadow-sm transition-colors [touch-action:manipulation]',
+          open
+            ? 'border-indigo-300 bg-indigo-600 text-white'
+            : 'border-slate-200 bg-white/95 text-slate-500 backdrop-blur-sm hover:bg-slate-50',
+        ].join(' ')}
+      >
+        <IconSettings className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+// ─── Mobile toolbar ──────────────────────────────────────────────────────────
+
+type MobilePanel = 'tools' | 'stats' | null
+
+const MOBILE_TOOLS: { mode: ToolMode; label: string; icon: ReactNode }[] = [
+  { mode: 'select',  label: 'Select',  icon: <IconCursor           className="h-5 w-5" /> },
+  { mode: 'joint',   label: 'Joint',   icon: <IconCircleDot        className="h-5 w-5" /> },
+  { mode: 'member',  label: 'Member',  icon: <IconLine             className="h-5 w-5" /> },
+  { mode: 'support', label: 'Support', icon: <IconTriangleSupport  className="h-5 w-5" /> },
+  { mode: 'load',    label: 'Load',    icon: <IconArrowDown        className="h-5 w-5" /> },
+]
+
+function MobileToolbar(props: {
+  tool: ToolMode
+  setTool: (t: ToolMode) => void
+  canUndo: boolean
+  canRedo: boolean
+  undo: () => void
+  redo: () => void
+  mobilePanel: MobilePanel
+  setMobilePanel: (p: MobilePanel) => void
+}) {
+  const { tool, setTool, canUndo, canRedo, undo, redo, mobilePanel, setMobilePanel } = props
+
+  const iconBtn = (
+    active: boolean,
+    disabled: boolean,
+    onClick: () => void,
+    icon: ReactNode,
+    label: string
+  ) => (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={[
+        'flex flex-1 flex-col items-center justify-center gap-0.5 py-1 rounded-lg [touch-action:manipulation] transition-colors',
+        active ? 'text-indigo-600' : disabled ? 'text-slate-300' : 'text-slate-500 active:bg-slate-100',
+      ].join(' ')}
+    >
+      {icon}
+      <span className="text-[10px] font-medium leading-none">{label}</span>
+    </button>
+  )
+
+  return (
+    <div className="flex h-14 items-stretch border-t border-slate-200 bg-white px-1 safe-area-inset-bottom">
+      {iconBtn(!canUndo ? false : false, !canUndo, undo, <IconUndo className="h-5 w-5" />, 'Undo')}
+      {iconBtn(false, !canRedo, redo, <IconRedo className="h-5 w-5" />, 'Redo')}
+
+      <div className="mx-1 my-2 w-px bg-slate-200" />
+
+      {MOBILE_TOOLS.map(({ mode, label, icon }) =>
+        iconBtn(tool === mode, false, () => setTool(mode), icon, label)
+      )}
+
+      <div className="mx-1 my-2 w-px bg-slate-200" />
+
+      {iconBtn(
+        mobilePanel === 'stats', false,
+        () => setMobilePanel(mobilePanel === 'stats' ? null : 'stats'),
+        <IconBarChart className="h-5 w-5" />, 'Stats'
+      )}
+      {iconBtn(
+        mobilePanel === 'tools', false,
+        () => setMobilePanel(mobilePanel === 'tools' ? null : 'tools'),
+        <IconMenu className="h-5 w-5" />, 'Tools'
+      )}
+    </div>
+  )
+}
+
+// ─── App ─────────────────────────────────────────────────────────────────────
 
 function App() {
   const [tool, setTool] = useState<ToolMode>('joint')
   const [gridStepM, setGridStepM] = useState(0.5)
   const [moveStepM, setMoveStepM] = useState<StepSize>(0.1)
   const [precision, setPrecision] = useState<PrecisionLevel>(3)
+  const [costRates, setCostRates] = useState<CostRates>(DEFAULT_COST_RATES)
+  const [pdfStatus, setPdfStatus] = useState<string | null>(null)
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
   const [selected, setSelected] = useState<{ jointId: string | null; memberId: string | null }>({
     jointId: null,
     memberId: null,
@@ -36,7 +181,6 @@ function App() {
   })
 
   const setTrussTransient = (next: Truss) => {
-    // Normalize joint labels (A, B, C...) based on current order.
     setTrussRaw(normalizeTruss(next))
   }
 
@@ -95,37 +239,26 @@ function App() {
         }
       }
 
-      // Arrow key movement for selected joint
       if (selected.jointId && !mod) {
         const joint = truss.joints.find((j) => j.id === selected.jointId)
         if (!joint) return
-
         let dx = 0
         let dy = 0
         switch (e.key) {
-          case 'ArrowLeft':
-            dx = -moveStepM
-            break
-          case 'ArrowRight':
-            dx = moveStepM
-            break
-          case 'ArrowUp':
-            dy = -moveStepM
-            break
-          case 'ArrowDown':
-            dy = moveStepM
-            break
-          default:
-            return
+          case 'ArrowLeft':  dx = -moveStepM; break
+          case 'ArrowRight': dx =  moveStepM; break
+          case 'ArrowUp':    dy = -moveStepM; break
+          case 'ArrowDown':  dy =  moveStepM; break
+          default: return
         }
-
         e.preventDefault()
-        // Inline coordinate update to avoid circular dependency
-        const newX = roundToStep(joint.x + dx, moveStepM)
-        const newY = roundToStep(joint.y + dy, moveStepM)
         commitTrussFrom(truss, {
           ...truss,
-          joints: truss.joints.map((j) => (j.id === selected.jointId ? { ...j, x: newX, y: newY } : j)),
+          joints: truss.joints.map((j) =>
+            j.id === selected.jointId
+              ? { ...j, x: roundToStep(joint.x + dx, moveStepM), y: roundToStep(joint.y + dy, moveStepM) }
+              : j
+          ),
         })
       }
     }
@@ -150,6 +283,7 @@ function App() {
       commitTruss({ ...truss, members: truss.members.filter((m) => m.id !== id) })
     }
   }, [commitTruss, selected.jointId, selected.memberId, truss])
+
   const addJoint = useCallback((x: number, y: number) => {
     const id = globalThis.crypto?.randomUUID?.() ?? `j_${Date.now()}_${Math.random().toString(16).slice(2)}`
     commitTruss({
@@ -158,20 +292,18 @@ function App() {
     })
     setSelected({ jointId: id, memberId: null })
   }, [commitTruss, truss])
+
   const updateJointCoordinate = useCallback(
     (jointId: string, x: number, y: number) => {
-      commitTrussFrom(
-        truss,
-        {
-          ...truss,
-          joints: truss.joints.map((j) => (j.id === jointId ? { ...j, x, y } : j)),
-        }
-      )
+      commitTrussFrom(truss, {
+        ...truss,
+        joints: truss.joints.map((j) => (j.id === jointId ? { ...j, x, y } : j)),
+      })
     },
     [commitTrussFrom, truss]
   )
 
-  const cost = useMemo(() => computeCost(truss), [truss])
+  const cost = useMemo(() => computeCost(truss, costRates), [truss, costRates])
   const analysis = useMemo(() => analyzeTruss(truss), [truss])
   const constraints = useMemo(() => {
     const base = computeConstraints(truss)
@@ -202,14 +334,8 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
-  const exportSvg = () => {
-    // Canvas registers a helper for MVP simplicity.
-    ;(window as any).__TRUSS_EXPORT_SVG__?.()
-  }
-
-  const exportPng = () => {
-    ;(window as any).__TRUSS_EXPORT_PNG__?.()
-  }
+  const exportSvg = () => { ;(window as any).__TRUSS_EXPORT_SVG__?.() }
+  const exportPng = () => { ;(window as any).__TRUSS_EXPORT_PNG__?.() }
 
   const autoMembers = () => {
     const res = autoAddMembers(truss)
@@ -218,71 +344,113 @@ function App() {
   }
 
   const clearAll = () => {
-    commitTruss({
-      joints: [],
-      members: [],
-      pylonHeightM: truss.pylonHeightM,
-    })
+    commitTruss({ joints: [], members: [], pylonHeightM: truss.pylonHeightM })
   }
 
   const exportCalculations = () => {
     downloadCalculations(truss, analysis, precision)
   }
 
+  const exportPdfLatex = async () => {
+    setPdfStatus('Compiling PDF…')
+    const result = await exportLatexReport({ truss, analysis, constraints, cost, costRates, precision })
+    setPdfStatus(result.message)
+    // Clear the status message after a few seconds (longer if it's a fallback message)
+    const delay = result.ok ? 3000 : 12000
+    setTimeout(() => setPdfStatus(null), delay)
+  }
+
+  // Shared panel props
+  const toolsPanelProps = {
+    tool, setTool, gridStepM, setGridStepM, moveStepM, setMoveStepM,
+    truss, setPylonHeightM: (n: number) => commitTruss({ ...truss, pylonHeightM: Math.max(0, n || 0) }),
+    exportJson, exportSvg, exportPng, exportCalculations, exportPdfLatex,
+    autoMembers, undo, redo, canUndo, canRedo, clearAll,
+    pdfStatus,
+  }
+
+  const statsPanelProps = {
+    truss, cost, constraints, analysis, selected, deleteSelected,
+    onUpdateJointCoordinate: updateJointCoordinate,
+    onAddJoint: addJoint,
+    precision, onPrecisionChange: setPrecision,
+    costRates,
+  }
+
+  const canvasProps = {
+    truss, setTruss: commitTruss, commitTrussFrom,
+    setTrussTransient, tool, gridStepM, analysis, constraints,
+    selected, setSelected, deleteSelected,
+  }
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-slate-100 text-slate-900">
       <div className="flex h-full min-h-0">
-        <ToolsPanel
-          tool={tool}
-          setTool={setTool}
-          gridStepM={gridStepM}
-          setGridStepM={setGridStepM}
-          moveStepM={moveStepM}
-          setMoveStepM={setMoveStepM}
-          truss={truss}
-          setPylonHeightM={(n) =>
-            commitTruss({ ...truss, pylonHeightM: Math.max(0, n || 0) })
-          }
-          exportJson={exportJson}
-          exportSvg={exportSvg}
-          exportPng={exportPng}
-          exportCalculations={exportCalculations}
-          autoMembers={autoMembers}
-          undo={undo}
-          redo={redo}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          clearAll={clearAll}
-        />
 
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <TrussCanvas
-            truss={truss}
-            setTruss={commitTruss}
-            commitTrussFrom={commitTrussFrom}
-            setTrussTransient={setTrussTransient}
-            tool={tool}
-            gridStepM={gridStepM}
-            analysis={analysis}
-            constraints={constraints}
-            selected={selected}
-            setSelected={setSelected}
-            deleteSelected={deleteSelected}
-          />
+        {/* ── Desktop: left panel ── */}
+        <div className="hidden lg:block lg:w-72 lg:shrink-0 h-full border-r border-slate-200">
+          <ToolsPanel {...toolsPanelProps} />
         </div>
 
-        <StatsPanel
-          truss={truss}
-          cost={cost}
-          constraints={constraints}
-          analysis={analysis}
-          selected={selected}
-          deleteSelected={deleteSelected}
-          onUpdateJointCoordinate={updateJointCoordinate}
-          onAddJoint={addJoint}
-          precision={precision}
-          onPrecisionChange={setPrecision}
-        />
+        {/* ── Canvas + mobile overlays ── */}
+        <div className="relative min-w-0 flex-1 overflow-hidden">
+          <TrussCanvas {...canvasProps} />
+
+          {/* Mobile backdrop */}
+          {mobilePanel !== null && (
+            <div
+              className="lg:hidden absolute inset-0 z-10 bg-black/20"
+              onClick={() => setMobilePanel(null)}
+            />
+          )}
+
+          {/* Mobile: tools bottom sheet */}
+          {mobilePanel === 'tools' && (
+            <div className="lg:hidden absolute inset-x-0 bottom-14 z-20 flex max-h-[72vh] flex-col rounded-t-2xl bg-white shadow-2xl overflow-hidden">
+              <div className="flex shrink-0 justify-center py-2.5">
+                <div className="h-1 w-10 rounded-full bg-slate-300" />
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <ToolsPanel {...toolsPanelProps} onClose={() => setMobilePanel(null)} />
+              </div>
+            </div>
+          )}
+
+          {/* Mobile: stats bottom sheet */}
+          {mobilePanel === 'stats' && (
+            <div className="lg:hidden absolute inset-x-0 bottom-14 z-20 flex max-h-[72vh] flex-col rounded-t-2xl bg-white shadow-2xl overflow-hidden">
+              <div className="flex shrink-0 justify-center py-2.5">
+                <div className="h-1 w-10 rounded-full bg-slate-300" />
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <StatsPanel {...statsPanelProps} onClose={() => setMobilePanel(null)} />
+              </div>
+            </div>
+          )}
+
+          {/* Cost rates floating widget */}
+          <CostRatesWidget costRates={costRates} setCostRates={setCostRates} />
+
+          {/* Mobile toolbar */}
+          <div className="lg:hidden absolute bottom-0 left-0 right-0 z-30">
+            <MobileToolbar
+              tool={tool}
+              setTool={(t) => { setTool(t); setMobilePanel(null) }}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              undo={undo}
+              redo={redo}
+              mobilePanel={mobilePanel}
+              setMobilePanel={setMobilePanel}
+            />
+          </div>
+        </div>
+
+        {/* ── Desktop: right panel ── */}
+        <div className="hidden lg:block lg:w-80 lg:shrink-0 h-full border-l border-slate-200">
+          <StatsPanel {...statsPanelProps} />
+        </div>
+
       </div>
     </div>
   )

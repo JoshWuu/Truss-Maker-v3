@@ -13,106 +13,94 @@ export function MathPanel(props: {
   const memberById = new Map(truss.members.map((m) => [m.id, m]))
   const jointById = new Map(truss.joints.map((j) => [j.id, j]))
 
+  const sectionLabel = 'text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2'
+  const monoRow = 'font-mono text-xs text-slate-700 leading-relaxed'
+
   return (
-    <div className="h-full max-h-96 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-3 text-xs">
-      <div className="mb-3 font-semibold text-slate-900">Mathematical Analysis</div>
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs space-y-4 overflow-x-hidden">
 
-      {/* Member Lengths Section */}
-      <div className="mb-4">
-        <div className="mb-2 font-semibold text-slate-800">Member Lengths</div>
-        <div className="space-y-1 font-mono text-slate-700">
-          {truss.members.map((member) => {
-            const ja = jointById.get(member.a)
-            const jb = jointById.get(member.b)
-            if (!ja || !jb) return null
-
-            const length = memberLengthM(truss, member)
-            const dx = jb.x - ja.x
-            const dy = jb.y - ja.y
-
-            return (
-              <div key={member.id} className="break-words">
-                <strong>
-                  {ja.label}-{jb.label}
-                </strong>{' '}
-                = √((
-                {formatCoordinate(jb.x, precision)} - {formatCoordinate(ja.x, precision)})² + (
-                {formatCoordinate(jb.y, precision)} - {formatCoordinate(ja.y, precision)})²)
-                <br />
-                &nbsp;&nbsp;&nbsp;&nbsp;= √({formatDistance(dx * dx, 2)}² + {formatDistance(dy * dy, 2)}²)
-                <br />
-                &nbsp;&nbsp;&nbsp;&nbsp;= <strong>{formatDistance(length, precision)} m</strong>
-              </div>
-            )
-          })}
-        </div>
+      <div>
+        <div className={sectionLabel}>Member Lengths</div>
+        {truss.members.length === 0 ? (
+          <p className="text-slate-400 text-xs">No members yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {truss.members.map((member) => {
+              const ja = jointById.get(member.a)
+              const jb = jointById.get(member.b)
+              if (!ja || !jb) return null
+              const length = memberLengthM(truss, member)
+              const dx = jb.x - ja.x
+              const dy = jb.y - ja.y
+              return (
+                <div key={member.id} className={monoRow}>
+                  <span className="font-semibold text-slate-900">{ja.label}–{jb.label}</span>
+                  {' = '}√(({formatCoordinate(jb.x, precision)}−{formatCoordinate(ja.x, precision)})²
+                  {' + '}({formatCoordinate(jb.y, precision)}−{formatCoordinate(ja.y, precision)})²)
+                  <br />
+                  <span className="pl-4">
+                    = √({formatDistance(dx * dx, 2)} + {formatDistance(dy * dy, 2)})
+                  </span>
+                  <br />
+                  <span className="pl-4 font-semibold text-slate-900">
+                    = {formatDistance(length, precision)} m
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Support Reactions Section */}
-      {analysis.ok ? (
-        <div className="mb-4">
-          <div className="mb-2 font-semibold text-slate-800">Support Reactions</div>
-          <div className="space-y-1 font-mono text-slate-700">
+      {analysis.ok && (
+        <div>
+          <div className={sectionLabel}>Support Reactions</div>
+          <div className="space-y-1">
             {Object.entries(analysis.reactions).map(([jointId, reaction]) => {
               const joint = jointById.get(jointId)
               if (!joint || joint.support === 'none') return null
-
               const hasRx = reaction.rxkN !== undefined && reaction.rxkN !== 0
               const hasRy = reaction.rykN !== undefined && reaction.rykN !== 0
-
               if (!hasRx && !hasRy) return null
-
               return (
-                <div key={jointId}>
-                  <strong>Joint {joint.label}:</strong>
-                  {hasRx && (
-                    <>
-                      {' '}
-                      R<sub>x</sub> = {formatForce(reaction.rxkN ?? 0)} kN
-                    </>
-                  )}
-                  {hasRx && hasRy && <> | </>}
-                  {hasRy && (
-                    <>
-                      {' '}
-                      R<sub>y</sub> = {formatForce(reaction.rykN ?? 0)} kN
-                    </>
-                  )}
+                <div key={jointId} className={monoRow}>
+                  <span className="font-semibold text-slate-900">Joint {joint.label}:</span>
+                  {hasRx && <> R<sub>x</sub> = {formatForce(reaction.rxkN ?? 0)} kN</>}
+                  {hasRx && hasRy && <span className="text-slate-400"> · </span>}
+                  {hasRy && <> R<sub>y</sub> = {formatForce(reaction.rykN ?? 0)} kN</>}
                 </div>
               )
             })}
           </div>
         </div>
-      ) : null}
+      )}
 
-      {/* Member Forces Section */}
       {analysis.ok ? (
         <div>
-          <div className="mb-2 font-semibold text-slate-800">Member Forces (Method of Joints)</div>
-          <div className="space-y-1 font-mono text-slate-700">
+          <div className={sectionLabel}>Member Forces</div>
+          <div className="space-y-1">
             {analysis.memberForces.map((force) => {
               const member = memberById.get(force.memberId)
               if (!member) return null
-
               const ja = jointById.get(member.a)
               const jb = jointById.get(member.b)
               if (!ja || !jb) return null
-
-              const forceType = force.forcekN >= 0 ? 'Tension' : 'Compression'
-
+              const forceType = force.forcekN >= 0 ? 'T' : 'C'
+              const color = force.forcekN >= 0 ? 'text-blue-700' : 'text-emerald-700'
               return (
-                <div key={force.memberId}>
-                  <strong>
-                    {ja.label}-{jb.label}
-                  </strong>
-                  : {formatForce(force.forcekN)} kN ({forceType})
+                <div key={force.memberId} className={monoRow}>
+                  <span className="font-semibold text-slate-900">{ja.label}–{jb.label}</span>
+                  {': '}
+                  <span className={color}>
+                    {formatForce(force.forcekN)} kN ({forceType})
+                  </span>
                 </div>
               )
             })}
           </div>
         </div>
       ) : (
-        <div className="text-slate-600">{analysis.reason}</div>
+        <div className="text-slate-400">{analysis.reason}</div>
       )}
     </div>
   )

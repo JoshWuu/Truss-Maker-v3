@@ -6,8 +6,7 @@ import { formatCoordinate } from '../truss/precision'
 
 type ViewBox = { x: number; y: number; w: number; h: number }
 
-function worldFromClient(svg: SVGSVGElement, _vb: ViewBox, clientX: number, clientY: number) {
-  // Correctly accounts for preserveAspectRatio letterboxing / transforms.
+function worldFromClient(svg: SVGSVGElement, clientX: number, clientY: number) {
   const ctm = svg.getScreenCTM()
   if (!ctm) return { x: 0, y: 0 }
   const p = svg.createSVGPoint()
@@ -31,11 +30,9 @@ async function downloadPngFromSvg(svgEl: SVGSVGElement, filename: string) {
   const cloned = svgEl.cloneNode(true) as SVGSVGElement
   cloned.removeAttribute('style')
   cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-
   const svgText = new XMLSerializer().serializeToString(cloned)
   const svgBlob = new Blob([svgText], { type: 'image/svg+xml' })
   const svgUrl = URL.createObjectURL(svgBlob)
-
   const img = new Image()
   const load = new Promise<void>((resolve, reject) => {
     img.onload = () => resolve()
@@ -43,33 +40,35 @@ async function downloadPngFromSvg(svgEl: SVGSVGElement, filename: string) {
   })
   img.src = svgUrl
   await load
-
   const r = svgEl.getBoundingClientRect()
   const w = Math.max(1, Math.floor(r.width * 2))
   const h = Math.max(1, Math.floor(r.height * 2))
-
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas not supported')
-
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, w, h)
   ctx.drawImage(img, 0, 0, w, h)
-
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG export failed'))), 'image/png')
   })
-
   URL.revokeObjectURL(svgUrl)
-
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+const TOOL_LABELS: Record<ToolMode, string> = {
+  select: 'Select',
+  joint: 'Add Joint',
+  member: 'Add Member',
+  support: 'Set Support',
+  load: 'Set Load',
 }
 
 export function TrussCanvas(props: {
@@ -84,19 +83,10 @@ export function TrussCanvas(props: {
   selected: { jointId: JointId | null; memberId: string | null }
   setSelected: (s: { jointId: JointId | null; memberId: string | null }) => void
   deleteSelected: () => void
-  onRequestExportSvg?: (svgEl: SVGSVGElement) => void
 }) {
   const {
-    truss,
-    setTruss,
-    commitTrussFrom,
-    setTrussTransient,
-    tool,
-    gridStepM,
-    analysis,
-    selected,
-    setSelected,
-    deleteSelected,
+    truss, setTruss, commitTrussFrom, setTrussTransient,
+    tool, gridStepM, analysis, selected, setSelected, deleteSelected,
   } = props
   const svgRef = useRef<SVGSVGElement | null>(null)
 
@@ -106,12 +96,35 @@ export function TrussCanvas(props: {
   const [dragStartTruss, setDragStartTruss] = useState<Truss | null>(null)
   const [hoverJoint, setHoverJoint] = useState<{ x: number; y: number } | null>(null)
   const [panStart, setPanStart] = useState<{
-    clientX: number
-    clientY: number
-    vb: ViewBox
-    active: boolean
+    clientX: number; clientY: number; vb: ViewBox; active: boolean
   } | null>(null)
   const [suppressNextClick, setSuppressNextClick] = useState(false)
+
+  // Keep a ref to the current viewBox for pinch-zoom calculations (avoids stale closure)
+  const viewBoxRef = useRef(viewBox)
+  useEffect(() => { viewBoxRef.current = viewBox }, [viewBox])
+
+  // Track active pointers for pinch-to-zoom
+  const touchPointersRef = useRef<Map<number, { clientX: number; clientY: number }>>(new Map())
+  const pinchRef = useRef<{ dist: number; vb: ViewBox } | null>(null)
+
+  // Keep viewBox.h in sync with the SVG element's real pixel aspect ratio so the
+  // grid fills edge-to-edge with no letterboxing.
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const sync = () => {
+      const { clientWidth: w, clientHeight: h } = svg
+      if (w > 0 && h > 0) {
+        setViewBox((prev) => ({ ...prev, h: prev.w * h / w }))
+      }
+    }
+    const ro = new ResizeObserver(sync)
+    ro.observe(svg)
+    sync()
+    return () => ro.disconnect()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -137,30 +150,39 @@ export function TrussCanvas(props: {
 
   const gridMinor = gridStepM
   const gridMajor = 2 * gridStepM
-  const gridFine = Math.max(gridStepM / 5, 0.001) // Ensure non-zero for very small grid steps
+  const gridFine = Math.max(gridStepM / 5, 0.001)
 
   const onWheel: React.WheelEventHandler<SVGSVGElement> = (e) => {
     e.preventDefault()
     const svg = svgRef.current
     if (!svg) return
-    const mouse = worldFromClient(svg, viewBox, e.clientX, e.clientY)
-
+    const mouse = worldFromClient(svg, e.clientX, e.clientY)
     const zoom = Math.exp(clamp(-e.deltaY, -200, 200) / 500)
     const nextW = clamp(viewBox.w / zoom, 4, 200)
-    const nextH = (nextW * viewBox.h) / viewBox.w
-
+    const { clientWidth: pw, clientHeight: ph } = svg
+    const nextH = pw > 0 ? nextW * ph / pw : nextW * viewBox.h / viewBox.w
     const nx = (mouse.x - viewBox.x) / viewBox.w
     const ny = (mouse.y - viewBox.y) / viewBox.h
-    const nextX = mouse.x - nx * nextW
-    const nextY = mouse.y - ny * nextH
-    setViewBox({ x: nextX, y: nextY, w: nextW, h: nextH })
+    setViewBox({ x: mouse.x - nx * nextW, y: mouse.y - ny * nextH, w: nextW, h: nextH })
   }
 
   const onBackgroundPointerDown: React.PointerEventHandler<SVGSVGElement> = (e) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 && e.pointerType !== 'touch') return
     const svg = svgRef.current
     if (!svg) return
-    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+
+    touchPointersRef.current.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY })
+
+    if (touchPointersRef.current.size === 2) {
+      // Second finger down — start pinch zoom
+      const ptrs = [...touchPointersRef.current.values()]
+      const dist = Math.hypot(ptrs[1].clientX - ptrs[0].clientX, ptrs[1].clientY - ptrs[0].clientY)
+      pinchRef.current = { dist, vb: viewBoxRef.current }
+      setPanStart(null)
+      return
+    }
+
+    svg.setPointerCapture(e.pointerId)
     setPanStart({ clientX: e.clientX, clientY: e.clientY, vb: viewBox, active: false })
   }
 
@@ -168,26 +190,56 @@ export function TrussCanvas(props: {
     const svg = svgRef.current
     if (!svg) return
 
+    // Update pointer tracking
+    if (touchPointersRef.current.has(e.pointerId)) {
+      touchPointersRef.current.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY })
+    }
+
+    // Pinch-to-zoom: two fingers on background
+    if (touchPointersRef.current.size === 2 && pinchRef.current) {
+      const ptrs = [...touchPointersRef.current.values()]
+      const [p0, p1] = ptrs
+      const currentDist = Math.hypot(p1.clientX - p0.clientX, p1.clientY - p0.clientY)
+      const midClientX = (p0.clientX + p1.clientX) / 2
+      const midClientY = (p0.clientY + p1.clientY) / 2
+
+      const { dist: startDist, vb: startVb } = pinchRef.current
+      if (startDist < 5) return
+
+      const totalZoom = currentDist / startDist
+      const nextW = clamp(startVb.w / totalZoom, 4, 200)
+      const { clientWidth: pw, clientHeight: ph } = svg
+      const nextH = pw > 0 ? nextW * ph / pw : (nextW * startVb.h) / startVb.w
+
+      const midWorld = worldFromClient(svg, midClientX, midClientY)
+      const nx = (midWorld.x - viewBox.x) / viewBox.w
+      const ny = (midWorld.y - viewBox.y) / viewBox.h
+
+      setViewBox({ x: midWorld.x - nx * nextW, y: midWorld.y - ny * nextH, w: nextW, h: nextH })
+      return
+    }
+
+    // Hover preview for joint placement
     if (tool === 'joint' && !dragJointId && !(panStart?.active ?? false)) {
-      const p = worldFromClient(svg, viewBox, e.clientX, e.clientY)
-      const x = snap(p.x, gridStepM)
-      const y = snap(p.y, gridStepM)
-      setHoverJoint({ x, y })
+      const p = worldFromClient(svg, e.clientX, e.clientY)
+      setHoverJoint({ x: snap(p.x, gridStepM), y: snap(p.y, gridStepM) })
     } else if (hoverJoint) {
       setHoverJoint(null)
     }
 
+    // Drag joint
     if (dragJointId) {
-      const p = worldFromClient(svg, viewBox, e.clientX, e.clientY)
-      const x = snap(p.x, gridStepM)
-      const y = snap(p.y, gridStepM)
+      const p = worldFromClient(svg, e.clientX, e.clientY)
       setTrussTransient({
         ...truss,
-        joints: truss.joints.map((j) => (j.id === dragJointId ? { ...j, x, y } : j)),
+        joints: truss.joints.map((j) =>
+          j.id === dragJointId ? { ...j, x: snap(p.x, gridStepM), y: snap(p.y, gridStepM) } : j
+        ),
       })
       return
     }
 
+    // Pan
     if (panStart) {
       const dxPx = e.clientX - panStart.clientX
       const dyPx = e.clientY - panStart.clientY
@@ -195,27 +247,28 @@ export function TrussCanvas(props: {
       const isActive = panStart.active || movedEnough
       if (!panStart.active && isActive) setPanStart({ ...panStart, active: true })
       const r = svg.getBoundingClientRect()
-      const dxN = (e.clientX - panStart.clientX) / r.width
-      const dyN = (e.clientY - panStart.clientY) / r.height
       if (isActive) {
         setViewBox({
           ...panStart.vb,
-          x: panStart.vb.x - dxN * panStart.vb.w,
-          y: panStart.vb.y - dyN * panStart.vb.h,
+          x: panStart.vb.x - (e.clientX - panStart.clientX) / r.width * panStart.vb.w,
+          y: panStart.vb.y - (e.clientY - panStart.clientY) / r.height * panStart.vb.h,
         })
       }
     }
   }
 
-  const onPointerUp: React.PointerEventHandler<SVGSVGElement> = () => {
+  const onPointerUp: React.PointerEventHandler<SVGSVGElement> = (e) => {
+    touchPointersRef.current.delete(e.pointerId)
+    if (touchPointersRef.current.size < 2) {
+      pinchRef.current = null
+    }
+
     if (dragJointId && dragStartTruss) {
-      // Commit one undo-step for the entire drag.
       commitTrussFrom(dragStartTruss, truss)
     }
     setDragJointId(null)
     setDragStartTruss(null)
     if (panStart?.active) {
-      // Prevent the subsequent click from placing a joint due to viewBox shift.
       setSuppressNextClick(true)
       setTimeout(() => setSuppressNextClick(false), 0)
     }
@@ -229,73 +282,58 @@ export function TrussCanvas(props: {
   const onBackgroundClick: React.MouseEventHandler<SVGSVGElement> = (e) => {
     if (tool !== 'joint') return
     const svg = svgRef.current
-    if (!svg) return
-    if (suppressNextClick) return
-
-    const p = worldFromClient(svg, viewBox, e.clientX, e.clientY)
-    const x = snap(p.x, gridStepM)
-    const y = snap(p.y, gridStepM)
-
+    if (!svg || suppressNextClick) return
+    const p = worldFromClient(svg, e.clientX, e.clientY)
     const id = globalThis.crypto?.randomUUID?.() ?? `j_${Date.now()}_${Math.random().toString(16).slice(2)}`
-    const label = '?'
     setTruss({
       ...truss,
-      joints: [...truss.joints, { id, label, x, y, support: 'none', loadYkN: 0 }],
+      joints: [...truss.joints, { id, label: '?', x: snap(p.x, gridStepM), y: snap(p.y, gridStepM), support: 'none', loadYkN: 0 }],
     })
   }
 
   const onJointPointerDown = (id: JointId) => (e: React.PointerEvent) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    ;(e.target as Element).setPointerCapture?.(e.pointerId)
-    setDragStartTruss(truss)
-    setDragJointId(id)
+    // Track for pinch detection
+    touchPointersRef.current.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY })
+    // Only start drag if single touch
+    if (touchPointersRef.current.size === 1) {
+      ;(e.target as Element).setPointerCapture?.(e.pointerId)
+      setDragStartTruss(truss)
+      setDragJointId(id)
+    }
   }
 
   const onJointClick = (id: JointId) => (e: React.MouseEvent) => {
     e.stopPropagation()
-
     if (tool === 'select') {
       setSelected({ jointId: id, memberId: null })
       return
     }
-
     if (tool === 'member') {
-      if (!memberStart) {
-        setMemberStart(id)
-        return
-      }
+      if (!memberStart) { setMemberStart(id); return }
       if (memberStart === id) return
-
-      const a = memberStart
-      const b = id
       const already = truss.members.some(
-        (m) => (m.a === a && m.b === b) || (m.a === b && m.b === a),
+        (m) => (m.a === memberStart && m.b === id) || (m.a === id && m.b === memberStart)
       )
       if (!already) {
         const memId = globalThis.crypto?.randomUUID?.() ?? `m_${Date.now()}_${Math.random().toString(16).slice(2)}`
-        setTruss({
-          ...truss,
-          members: [...truss.members, { id: memId, a, b, multiplier: 1 }],
-        })
+        setTruss({ ...truss, members: [...truss.members, { id: memId, a: memberStart, b: id, multiplier: 1 }] })
       }
       setMemberStart(null)
       return
     }
-
     if (tool === 'support') {
       setTruss({
         ...truss,
         joints: truss.joints.map((j) => {
           if (j.id !== id) return j
-          const next =
-            j.support === 'none' ? 'pinned' : j.support === 'pinned' ? 'roller' : 'none'
+          const next = j.support === 'none' ? 'pinned' : j.support === 'pinned' ? 'roller' : 'none'
           return { ...j, support: next }
         }),
       })
       return
     }
-
     if (tool === 'load') {
       const joint = jointById(truss, id)
       const current = joint?.loadYkN ?? 0
@@ -303,10 +341,7 @@ export function TrussCanvas(props: {
       if (str == null) return
       const val = Number(str)
       if (!Number.isFinite(val)) return
-      setTruss({
-        ...truss,
-        joints: truss.joints.map((j) => (j.id === id ? { ...j, loadYkN: val } : j)),
-      })
+      setTruss({ ...truss, joints: truss.joints.map((j) => (j.id === id ? { ...j, loadYkN: val } : j)) })
     }
   }
 
@@ -322,10 +357,7 @@ export function TrussCanvas(props: {
     if (nextStr == null) return
     const next = Number(nextStr)
     if (next !== 1 && next !== 2 && next !== 3) return
-    setTruss({
-      ...truss,
-      members: truss.members.map((m) => (m.id === memberId ? { ...m, multiplier: next } : m)),
-    })
+    setTruss({ ...truss, members: truss.members.map((m) => (m.id === memberId ? { ...m, multiplier: next } : m)) })
   }
 
   const exportSvg = () => {
@@ -334,8 +366,7 @@ export function TrussCanvas(props: {
     const cloned = svg.cloneNode(true) as SVGSVGElement
     cloned.removeAttribute('style')
     cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-    const text = new XMLSerializer().serializeToString(cloned)
-    downloadText('truss-builder.svg', text, 'image/svg+xml')
+    downloadText('truss-builder.svg', new XMLSerializer().serializeToString(cloned), 'image/svg+xml')
   }
 
   const exportPng = async () => {
@@ -344,12 +375,9 @@ export function TrussCanvas(props: {
     await downloadPngFromSvg(svg, 'truss-builder.png')
   }
 
-  // Expose export to parent via helper shortcut (used by left panel)
   ;(window as any).__TRUSS_EXPORT_SVG__ = exportSvg
   ;(window as any).__TRUSS_EXPORT_PNG__ = exportPng
 
-  // Build joint labels deterministically by order in array.
-  // App sets labels too, but we also guard here for safety.
   const jointLabelById = useMemo(() => {
     const map = new Map<JointId, string>()
     truss.joints.forEach((j) => map.set(j.id, j.label || '?'))
@@ -370,29 +398,14 @@ export function TrussCanvas(props: {
         onClick={onBackgroundClick}
       >
         <defs>
-          <pattern
-            id="fineGrid"
-            width={gridFine}
-            height={gridFine}
-            patternUnits="userSpaceOnUse"
-          >
+          <pattern id="fineGrid" width={gridFine} height={gridFine} patternUnits="userSpaceOnUse">
             <path d={`M ${gridFine} 0 L 0 0 0 ${gridFine}`} fill="none" stroke="#f1f5f9" strokeWidth={0.01} />
           </pattern>
-          <pattern
-            id="minorGrid"
-            width={gridMinor}
-            height={gridMinor}
-            patternUnits="userSpaceOnUse"
-          >
+          <pattern id="minorGrid" width={gridMinor} height={gridMinor} patternUnits="userSpaceOnUse">
             <rect width={gridMinor} height={gridMinor} fill="url(#fineGrid)" />
             <path d={`M ${gridMinor} 0 L 0 0 0 ${gridMinor}`} fill="none" stroke="#e2e8f0" strokeWidth={0.02} />
           </pattern>
-          <pattern
-            id="majorGrid"
-            width={gridMajor}
-            height={gridMajor}
-            patternUnits="userSpaceOnUse"
-          >
+          <pattern id="majorGrid" width={gridMajor} height={gridMajor} patternUnits="userSpaceOnUse">
             <rect width={gridMajor} height={gridMajor} fill="url(#minorGrid)" />
             <path d={`M ${gridMajor} 0 L 0 0 0 ${gridMajor}`} fill="none" stroke="#cbd5e1" strokeWidth={0.03} />
           </pattern>
@@ -400,23 +413,19 @@ export function TrussCanvas(props: {
 
         <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#majorGrid)" />
 
-        {/* Joint placement preview */}
-        {tool === 'joint' && hoverJoint ? (
+        {/* Joint placement ghost */}
+        {tool === 'joint' && hoverJoint && (
           <g pointerEvents="none">
             <circle
-              cx={hoverJoint.x}
-              cy={hoverJoint.y}
-              r={0.18}
-              fill="rgba(148, 163, 184, 0.12)"
-              stroke="rgba(100, 116, 139, 0.7)"
-              strokeWidth={0.08}
+              cx={hoverJoint.x} cy={hoverJoint.y} r={0.18}
+              fill="rgba(99,102,241,0.15)" stroke="rgba(99,102,241,0.6)" strokeWidth={0.07}
             />
           </g>
-        ) : null}
+        )}
 
         {/* Axes */}
-        <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke="#94a3b8" strokeWidth={0.05} />
-        <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke="#94a3b8" strokeWidth={0.05} />
+        <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke="#94a3b8" strokeWidth={0.04} />
+        <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke="#94a3b8" strokeWidth={0.04} />
 
         {/* Members */}
         {truss.members.map((mem) => {
@@ -429,37 +438,39 @@ export function TrussCanvas(props: {
           const absF = f == null ? null : Math.abs(f)
           const forceTooHigh = absF != null && absF > 12.0000001
           const hasForce = f != null && Number.isFinite(f)
-
-          let stroke = '#0f172a'
+          let stroke = '#334155'
           if (tooLong) stroke = '#ef4444'
           if (hasForce) {
             stroke = f! >= 0 ? '#2563eb' : '#16a34a'
             if (forceTooHigh) stroke = '#ef4444'
           }
-
           const mx = (a.x + b.x) / 2
           const my = (a.y + b.y) / 2
           const isSelected = selected.memberId === mem.id
           return (
             <g key={mem.id}>
+              {/* Wider invisible hit area for easier clicking */}
               <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                stroke={stroke}
-                strokeWidth={isSelected ? 0.18 : 0.12}
+                x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                stroke="transparent" strokeWidth={0.4}
                 onClick={onMemberClick(mem.id)}
+                style={{ cursor: 'pointer' }}
               />
-              <text x={mx} y={my} fontSize={0.35} fill="#0f172a" textAnchor="middle">
-                {Number.isFinite(len) ? `${len.toFixed(2)}m` : ''}
+              <line
+                x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                stroke={isSelected ? '#f59e0b' : stroke}
+                strokeWidth={isSelected ? 0.2 : 0.1}
+                pointerEvents="none"
+              />
+              <text x={mx} y={my - 0.1} fontSize={0.28} fill="#475569" textAnchor="middle" pointerEvents="none">
+                {Number.isFinite(len) ? `${len.toFixed(2)} m` : ''}
                 {mem.multiplier > 1 ? ` ×${mem.multiplier}` : ''}
               </text>
-              {hasForce ? (
-                <text x={mx} y={my + 0.4} fontSize={0.32} fill={stroke} textAnchor="middle">
+              {hasForce && (
+                <text x={mx} y={my + 0.32} fontSize={0.26} fill={stroke} textAnchor="middle" pointerEvents="none">
                   {f!.toFixed(2)} kN
                 </text>
-              ) : null}
+              )}
             </g>
           )
         })}
@@ -469,75 +480,80 @@ export function TrussCanvas(props: {
           const isMemberStart = memberStart === j.id
           const isSelected = selected.jointId === j.id
           const jointColor =
-            j.support === 'pinned' ? '#7c3aed' : j.support === 'roller' ? '#0ea5e9' : '#0f172a'
+            j.support === 'pinned' ? '#7c3aed' : j.support === 'roller' ? '#0ea5e9' : '#334155'
           return (
             <g key={j.id}>
               {/* Load arrow */}
-              {j.loadYkN !== 0 ? (
-                <g>
-                  <line
-                    x1={j.x}
-                    y1={j.y - 0.2}
-                    x2={j.x}
-                    y2={j.y + 0.9}
-                    stroke="#ef4444"
-                    strokeWidth={0.08}
-                  />
+              {j.loadYkN !== 0 && (
+                <g pointerEvents="none">
+                  <line x1={j.x} y1={j.y - 0.15} x2={j.x} y2={j.y + 0.85} stroke="#ef4444" strokeWidth={0.07} />
                   <polygon
-                    points={`${j.x - 0.18},${j.y + 0.9} ${j.x + 0.18},${j.y + 0.9} ${j.x},${j.y + 1.15}`}
+                    points={`${j.x - 0.16},${j.y + 0.85} ${j.x + 0.16},${j.y + 0.85} ${j.x},${j.y + 1.1}`}
                     fill="#ef4444"
                   />
-                  <text x={j.x + 0.2} y={j.y + 0.2} fontSize={0.32} fill="#ef4444">
+                  <text x={j.x + 0.22} y={j.y + 0.2} fontSize={0.28} fill="#ef4444">
                     {j.loadYkN.toFixed(2)} kN
                   </text>
                 </g>
-              ) : null}
+              )}
 
+              {/* Enlarged transparent hit area */}
               <circle
-                cx={j.x}
-                cy={j.y}
-                r={0.18}
-                fill={isMemberStart ? '#fde68a' : 'white'}
-                stroke={isSelected ? '#f59e0b' : jointColor}
-                strokeWidth={isSelected ? 0.15 : 0.08}
+                cx={j.x} cy={j.y} r={0.4}
+                fill="transparent" stroke="none"
                 onPointerDown={onJointPointerDown(j.id)}
                 onClick={onJointClick(j.id)}
+                style={{ cursor: tool === 'select' || tool === 'member' ? 'pointer' : 'crosshair' }}
               />
+
+              {/* Selection halo */}
               {isSelected && (
-                <circle
-                  cx={j.x}
-                  cy={j.y}
-                  r={0.3}
-                  fill="none"
-                  stroke="#f59e0b"
-                  strokeWidth={0.06}
-                  opacity={0.5}
-                />
+                <circle cx={j.x} cy={j.y} r={0.32} fill="none" stroke="#f59e0b" strokeWidth={0.08} opacity={0.6} pointerEvents="none" />
               )}
-              <text x={j.x + 0.3} y={j.y - 0.3} fontSize={0.32} fill="#0f172a" fontWeight="500">
-                {jointLabelById.get(j.id) ?? '?'} ({formatCoordinate(j.x, 2)}, {formatCoordinate(j.y, 2)})
+
+              {/* Visible joint */}
+              <circle
+                cx={j.x} cy={j.y} r={0.18}
+                fill={isMemberStart ? '#fde68a' : 'white'}
+                stroke={isSelected ? '#f59e0b' : jointColor}
+                strokeWidth={isSelected ? 0.12 : 0.07}
+                pointerEvents="none"
+              />
+
+              {/* Label */}
+              <text x={j.x + 0.26} y={j.y - 0.26} fontSize={0.28} fill="#334155" fontWeight="600" pointerEvents="none">
+                {jointLabelById.get(j.id) ?? '?'}
+              </text>
+              <text x={j.x + 0.26} y={j.y - 0.02} fontSize={0.22} fill="#94a3b8" pointerEvents="none">
+                ({formatCoordinate(j.x, 2)}, {formatCoordinate(j.y, 2)})
               </text>
             </g>
           )
         })}
       </svg>
 
-      <div className="absolute bottom-2 left-2 rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-xs text-slate-700 shadow-sm">
-        Tool: <span className="font-semibold">{tool}</span>
-        {tool === 'member' && memberStart ? (
-          <span className="ml-2 text-slate-500">
-            pick second joint (start={jointLabelById.get(memberStart)})
+      {/* Status bar */}
+      <div className="absolute bottom-14 left-0 right-0 flex items-center gap-3 border-t border-slate-200/80 bg-white/95 px-3 py-1.5 text-xs backdrop-blur-sm lg:bottom-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Mode</span>
+          <span className="font-semibold text-slate-700">{TOOL_LABELS[tool]}</span>
+        </div>
+        {tool === 'member' && memberStart && (
+          <span className="text-indigo-600">
+            From <strong>{jointLabelById.get(memberStart)}</strong> — click second joint
           </span>
-        ) : null}
-        <button
-          type="button"
-          className="ml-3 text-xs font-semibold text-slate-900 underline decoration-slate-300 underline-offset-2"
-          onClick={exportSvg}
-        >
-          Export SVG
-        </button>
+        )}
+        <div className="ml-auto flex items-center gap-3 text-slate-400">
+          <span className="hidden sm:inline">Scroll to zoom · Drag to pan · Pinch to zoom</span>
+          <button
+            type="button"
+            className="rounded-md px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-100 [touch-action:manipulation]"
+            onClick={exportSvg}
+          >
+            Export SVG
+          </button>
+        </div>
       </div>
     </div>
   )
 }
-

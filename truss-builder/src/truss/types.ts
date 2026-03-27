@@ -29,6 +29,20 @@ export type Truss = {
 
 export type ToolMode = 'joint' | 'member' | 'support' | 'load' | 'select'
 
+export type CostRates = {
+  memberPerM: number   // $ per metre of member
+  perJoint: number     // $ per joint
+  pylonPerM: number    // $ per metre of pylon height
+  perRope: number      // $ per loaded joint (rope)
+}
+
+export const DEFAULT_COST_RATES: CostRates = {
+  memberPerM: 12,
+  perJoint: 3,
+  pylonPerM: 12,
+  perRope: 4,
+}
+
 export type MemberForce = {
   memberId: MemberId
   forcekN: number // +tension, -compression
