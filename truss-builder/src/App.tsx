@@ -14,7 +14,7 @@ import { analyzeTruss } from './truss/solver'
 import { autoAddMembers } from './truss/autoMembers'
 import { roundToStep } from './truss/precision'
 import { downloadCalculations } from './truss/export'
-import { exportLatexReport } from './truss/latex'
+import { exportLatexReport, exportLatexSource } from './truss/latex'
 import type { TrussPreset } from './truss/presets'
 import {
   IconCursor,
@@ -383,11 +383,15 @@ function App() {
     setTimeout(() => setPdfStatus(null), delay)
   }
 
+  const exportLatexTex = () => {
+    exportLatexSource({ truss, analysis, constraints, cost, costRates, precision })
+  }
+
   // Shared panel props
   const toolsPanelProps = {
     tool, setTool, gridStepM, setGridStepM, moveStepM, setMoveStepM,
     truss, setPylonHeightM: (n: number) => commitTruss({ ...truss, pylonHeightM: Math.max(0, n || 0) }),
-    exportJson, exportSvg, exportPng, exportCalculations, exportPdfLatex,
+    exportJson, exportSvg, exportPng, exportCalculations, exportPdfLatex, exportLatexTex,
     autoMembers, undo, redo, canUndo, canRedo, clearAll,
     pdfStatus,
     onLoadPreset: loadPreset,

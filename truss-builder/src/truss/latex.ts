@@ -571,6 +571,11 @@ function downloadTexSource(source: string, filename = 'truss-report.tex') {
   downloadBlob(new Blob([source], { type: 'text/plain' }), filename)
 }
 
+/** Downloads the raw .tex source without attempting PDF compilation. */
+export function exportLatexSource(params: LatexParams) {
+  downloadTexSource(generateLatex(params))
+}
+
 /**
  * Attempts to compile via the YtoTech public LaTeX API.
  * Returns true and triggers a PDF download if successful; returns false otherwise.

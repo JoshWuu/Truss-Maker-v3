@@ -132,6 +132,7 @@ export function ToolsPanel(props: {
   exportPng: () => void
   exportCalculations: () => void
   exportPdfLatex: () => void
+  exportLatexTex: () => void
   autoMembers: () => void
   undo: () => void
   redo: () => void
@@ -147,7 +148,7 @@ export function ToolsPanel(props: {
   const {
     tool, setTool, gridStepM, setGridStepM, moveStepM, setMoveStepM,
     truss, setPylonHeightM, exportJson, exportSvg, exportPng,
-    exportCalculations, exportPdfLatex, autoMembers, undo, redo, canUndo, canRedo,
+    exportCalculations, exportPdfLatex, exportLatexTex, autoMembers, undo, redo, canUndo, canRedo,
     clearAll, pdfStatus, onLoadPreset, presetsForceOpen, onReplayTutorial, onClose,
   } = props
 
@@ -291,9 +292,14 @@ export function ToolsPanel(props: {
           </Button>
 
           {/* PDF / LaTeX export */}
-          <Button className="w-full" onClick={exportPdfLatex}>
-            <IconDownload className="h-4 w-4" /> Export as PDF (LaTeX)
-          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button onClick={exportPdfLatex}>
+              <IconDownload className="h-4 w-4" /> PDF
+            </Button>
+            <Button onClick={exportLatexTex}>
+              <IconDownload className="h-4 w-4" /> .tex
+            </Button>
+          </div>
           {pdfStatus && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 whitespace-pre-wrap">
               {pdfStatus}
