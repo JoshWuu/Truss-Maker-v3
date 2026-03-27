@@ -165,6 +165,7 @@ function App() {
   const [pdfStatus, setPdfStatus] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(() => localStorage.getItem('trussbuilder_seen_tutorial') !== '1')
   const [presetsForceOpen, setPresetsForceOpen] = useState(false)
+  const [supportType, setSupportType] = useState<'pinned' | 'roller'>('pinned')
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
   const [selected, setSelected] = useState<{ jointId: string | null; memberId: string | null }>({
     jointId: null,
@@ -312,16 +313,17 @@ function App() {
   const constraints = useMemo(() => {
     const base = computeConstraints(truss)
     if (!analysis.ok) return base
-    const tooHigh = analysis.memberForces.filter((f) => Math.abs(f.forcekN) > 12.0000001)
+    const memberCapMap = new Map(truss.members.map((m) => [m.id, 12 * m.multiplier]))
+    const tooHigh = analysis.memberForces.filter((f) => Math.abs(f.forcekN) > (memberCapMap.get(f.memberId) ?? 12) + 0.0000001)
     return {
       ...base,
       results: [
         ...base.results,
         {
           id: 'member-force',
-          label: 'Member force ≤ 12 kN',
+          label: 'Member forces within capacity',
           ok: tooHigh.length === 0,
-          details: tooHigh.length === 0 ? undefined : `${tooHigh.length} member(s) exceed 12 kN`,
+          details: tooHigh.length === 0 ? undefined : `${tooHigh.length} member(s) exceed capacity`,
         },
       ],
     }
@@ -349,6 +351,10 @@ function App() {
 
   const clearAll = () => {
     commitTruss({ joints: [], members: [], pylonHeightM: truss.pylonHeightM })
+  }
+
+  const updateMemberMultiplier = (memberId: string, multiplier: 1 | 2 | 3) => {
+    commitTruss({ ...truss, members: truss.members.map((m) => m.id === memberId ? { ...m, multiplier } : m) })
   }
 
   const loadPreset = useCallback((preset: TrussPreset) => {
@@ -397,6 +403,7 @@ function App() {
     onLoadPreset: loadPreset,
     presetsForceOpen,
     onReplayTutorial: () => setShowModal(true),
+    supportType, setSupportType,
   }
 
   const statsPanelProps = {
@@ -405,12 +412,14 @@ function App() {
     onAddJoint: addJoint,
     precision, onPrecisionChange: setPrecision,
     costRates,
+    onUpdateMemberMultiplier: updateMemberMultiplier,
   }
 
   const canvasProps = {
     truss, setTruss: commitTruss, commitTrussFrom,
     setTrussTransient, tool, gridStepM, analysis, constraints,
     selected, setSelected, deleteSelected,
+    supportType,
   }
 
   return (

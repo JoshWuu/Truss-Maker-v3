@@ -143,13 +143,16 @@ export function ToolsPanel(props: {
   onLoadPreset: (preset: TrussPreset) => void
   presetsForceOpen?: boolean
   onReplayTutorial?: () => void
+  supportType: 'pinned' | 'roller'
+  setSupportType: (t: 'pinned' | 'roller') => void
   onClose?: () => void
 }) {
   const {
     tool, setTool, gridStepM, setGridStepM, moveStepM, setMoveStepM,
     truss, setPylonHeightM, exportJson, exportSvg, exportPng,
     exportCalculations, exportPdfLatex, exportLatexTex, autoMembers, undo, redo, canUndo, canRedo,
-    clearAll, pdfStatus, onLoadPreset, presetsForceOpen, onReplayTutorial, onClose,
+    clearAll, pdfStatus, onLoadPreset, presetsForceOpen, onReplayTutorial,
+    supportType, setSupportType, onClose,
   } = props
 
   return (
@@ -214,6 +217,16 @@ export function ToolsPanel(props: {
               </Button>
             ))}
           </div>
+          {tool === 'support' && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button active={supportType === 'pinned'} onClick={() => setSupportType('pinned')}>
+                <IconTriangleSupport className="h-4 w-4" /> Pinned
+              </Button>
+              <Button active={supportType === 'roller'} onClick={() => setSupportType('roller')}>
+                <IconTriangleSupport className="h-4 w-4" /> Roller
+              </Button>
+            </div>
+          )}
           <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500 space-y-1 leading-relaxed">
             <div><strong className="font-semibold text-slate-600">Select</strong> — click joint or member to select, then delete</div>
             <div><strong className="font-semibold text-slate-600">Drag</strong> — drag joints to reposition (snaps to grid)</div>

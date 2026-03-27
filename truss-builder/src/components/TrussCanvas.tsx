@@ -83,10 +83,12 @@ export function TrussCanvas(props: {
   selected: { jointId: JointId | null; memberId: string | null }
   setSelected: (s: { jointId: JointId | null; memberId: string | null }) => void
   deleteSelected: () => void
+  supportType: 'pinned' | 'roller'
 }) {
   const {
     truss, setTruss, commitTrussFrom, setTrussTransient,
     tool, gridStepM, analysis, selected, setSelected, deleteSelected,
+    supportType,
   } = props
   const svgRef = useRef<SVGSVGElement | null>(null)
 
@@ -328,8 +330,15 @@ export function TrussCanvas(props: {
         ...truss,
         joints: truss.joints.map((j) => {
           if (j.id !== id) return j
-          const next = j.support === 'none' ? 'pinned' : j.support === 'pinned' ? 'roller' : 'none'
-          return { ...j, support: next }
+          if (supportType === 'pinned') {
+            return { ...j, support: j.support === 'pinned' ? 'none' : 'pinned' }
+          }
+          // roller: rotate 90° each click through full 360°
+          if (j.support === 'none' || j.support === 'pinned') return { ...j, support: 'roller' }
+          if (j.support === 'roller') return { ...j, support: 'roller-x' }
+          if (j.support === 'roller-x') return { ...j, support: 'roller-up' }
+          if (j.support === 'roller-up') return { ...j, support: 'roller-left' }
+          return { ...j, support: 'roller' } // roller-left → back to start
         }),
       })
       return
@@ -436,7 +445,8 @@ export function TrussCanvas(props: {
           const tooLong = Number.isFinite(len) && len > 3.0000001
           const f = forceByMemberId.get(mem.id)
           const absF = f == null ? null : Math.abs(f)
-          const forceTooHigh = absF != null && absF > 12.0000001
+          const capacity = 12 * mem.multiplier
+          const forceTooHigh = absF != null && absF > capacity + 0.0000001
           const hasForce = f != null && Number.isFinite(f)
           let stroke = '#334155'
           if (tooLong) stroke = '#ef4444'
@@ -453,13 +463,14 @@ export function TrussCanvas(props: {
               <line
                 x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                 stroke="transparent" strokeWidth={0.4}
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={onMemberClick(mem.id)}
                 style={{ cursor: 'pointer' }}
               />
               <line
                 x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                 stroke={isSelected ? '#f59e0b' : stroke}
-                strokeWidth={isSelected ? 0.2 : 0.1}
+                strokeWidth={isSelected ? 0.2 : mem.multiplier === 3 ? 0.18 : mem.multiplier === 2 ? 0.14 : 0.1}
                 pointerEvents="none"
               />
               <text x={mx} y={my - 0.1} fontSize={0.28} fill="#475569" textAnchor="middle" pointerEvents="none">
@@ -479,21 +490,34 @@ export function TrussCanvas(props: {
         {truss.joints.map((j) => {
           const isMemberStart = memberStart === j.id
           const isSelected = selected.jointId === j.id
-          const jointColor =
-            j.support === 'pinned' ? '#7c3aed' : j.support === 'roller' ? '#0ea5e9' : '#334155'
+          const isRoller = j.support === 'roller' || j.support === 'roller-x' || j.support === 'roller-up' || j.support === 'roller-left'
+          const jointColor = j.support === 'pinned' ? '#7c3aed' : isRoller ? '#0ea5e9' : '#334155'
           return (
             <g key={j.id}>
               {/* Load arrow */}
               {j.loadYkN !== 0 && (
-                <g pointerEvents="none">
+                <g
+                  style={{ cursor: 'pointer' }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const str = window.prompt('Vertical load at joint (kN, +down). Use 0 to clear.', String(j.loadYkN))
+                    if (str == null) return
+                    const val = Number(str)
+                    if (!Number.isFinite(val)) return
+                    setTruss({ ...truss, joints: truss.joints.map((jj) => jj.id === j.id ? { ...jj, loadYkN: val } : jj) })
+                  }}
+                >
                   <line x1={j.x} y1={j.y - 0.15} x2={j.x} y2={j.y + 0.85} stroke="#ef4444" strokeWidth={0.07} />
                   <polygon
                     points={`${j.x - 0.16},${j.y + 0.85} ${j.x + 0.16},${j.y + 0.85} ${j.x},${j.y + 1.1}`}
                     fill="#ef4444"
                   />
-                  <text x={j.x + 0.22} y={j.y + 0.2} fontSize={0.28} fill="#ef4444">
+                  <text x={j.x + 0.22} y={j.y + 0.2} fontSize={0.28} fill="#ef4444" style={{ userSelect: 'none' }}>
                     {j.loadYkN.toFixed(2)} kN
                   </text>
+                  {/* Transparent hit area covering the arrow */}
+                  <rect x={j.x - 0.3} y={j.y - 0.2} width={0.8} height={1.4} fill="transparent" />
                 </g>
               )}
 
@@ -505,6 +529,83 @@ export function TrussCanvas(props: {
                 onClick={onJointClick(j.id)}
                 style={{ cursor: tool === 'select' || tool === 'member' ? 'pointer' : 'crosshair' }}
               />
+
+              {/* Support symbol */}
+              {j.support === 'pinned' && (
+                <g pointerEvents="none">
+                  <polygon
+                    points={`${j.x},${j.y + 0.02} ${j.x - 0.27},${j.y + 0.46} ${j.x + 0.27},${j.y + 0.46}`}
+                    fill="#ede9fe" stroke="#7c3aed" strokeWidth={0.045}
+                  />
+                  <line x1={j.x - 0.34} y1={j.y + 0.46} x2={j.x + 0.34} y2={j.y + 0.46} stroke="#7c3aed" strokeWidth={0.05} />
+                  {([-0.22, -0.08, 0.06, 0.20] as number[]).map((dx) => (
+                    <line key={dx} x1={j.x + dx} y1={j.y + 0.46} x2={j.x + dx - 0.1} y2={j.y + 0.6} stroke="#7c3aed" strokeWidth={0.035} />
+                  ))}
+                </g>
+              )}
+              {j.support === 'roller' && (
+                <g pointerEvents="none">
+                  {/* Triangle pointing down */}
+                  <polygon
+                    points={`${j.x},${j.y + 0.02} ${j.x - 0.27},${j.y + 0.43} ${j.x + 0.27},${j.y + 0.43}`}
+                    fill="#e0f2fe" stroke="#0ea5e9" strokeWidth={0.045}
+                  />
+                  {([-0.15, 0, 0.15] as number[]).map((dx) => (
+                    <circle key={dx} cx={j.x + dx} cy={j.y + 0.53} r={0.07} fill="white" stroke="#0ea5e9" strokeWidth={0.04} />
+                  ))}
+                  <line x1={j.x - 0.34} y1={j.y + 0.62} x2={j.x + 0.34} y2={j.y + 0.62} stroke="#0ea5e9" strokeWidth={0.05} />
+                  {([-0.22, -0.08, 0.06, 0.20] as number[]).map((dx) => (
+                    <line key={dx} x1={j.x + dx} y1={j.y + 0.62} x2={j.x + dx - 0.1} y2={j.y + 0.76} stroke="#0ea5e9" strokeWidth={0.035} />
+                  ))}
+                </g>
+              )}
+              {j.support === 'roller-x' && (
+                <g pointerEvents="none">
+                  <polygon
+                    points={`${j.x + 0.02},${j.y} ${j.x + 0.43},${j.y - 0.27} ${j.x + 0.43},${j.y + 0.27}`}
+                    fill="#e0f2fe" stroke="#0ea5e9" strokeWidth={0.045}
+                  />
+                  {([-0.15, 0, 0.15] as number[]).map((dy) => (
+                    <circle key={dy} cx={j.x + 0.53} cy={j.y + dy} r={0.07} fill="white" stroke="#0ea5e9" strokeWidth={0.04} />
+                  ))}
+                  <line x1={j.x + 0.62} y1={j.y - 0.34} x2={j.x + 0.62} y2={j.y + 0.34} stroke="#0ea5e9" strokeWidth={0.05} />
+                  {([-0.22, -0.08, 0.06, 0.20] as number[]).map((dy) => (
+                    <line key={dy} x1={j.x + 0.62} y1={j.y + dy} x2={j.x + 0.76} y2={j.y + dy - 0.1} stroke="#0ea5e9" strokeWidth={0.035} />
+                  ))}
+                </g>
+              )}
+              {j.support === 'roller-up' && (
+                <g pointerEvents="none">
+                  {/* Triangle pointing up — apex at joint */}
+                  <polygon
+                    points={`${j.x},${j.y - 0.02} ${j.x - 0.27},${j.y - 0.43} ${j.x + 0.27},${j.y - 0.43}`}
+                    fill="#e0f2fe" stroke="#0ea5e9" strokeWidth={0.045}
+                  />
+                  {([-0.15, 0, 0.15] as number[]).map((dx) => (
+                    <circle key={dx} cx={j.x + dx} cy={j.y - 0.53} r={0.07} fill="white" stroke="#0ea5e9" strokeWidth={0.04} />
+                  ))}
+                  <line x1={j.x - 0.34} y1={j.y - 0.62} x2={j.x + 0.34} y2={j.y - 0.62} stroke="#0ea5e9" strokeWidth={0.05} />
+                  {([-0.22, -0.08, 0.06, 0.20] as number[]).map((dx) => (
+                    <line key={dx} x1={j.x + dx} y1={j.y - 0.62} x2={j.x + dx - 0.1} y2={j.y - 0.76} stroke="#0ea5e9" strokeWidth={0.035} />
+                  ))}
+                </g>
+              )}
+              {j.support === 'roller-left' && (
+                <g pointerEvents="none">
+                  {/* Triangle pointing left — apex at joint */}
+                  <polygon
+                    points={`${j.x - 0.02},${j.y} ${j.x - 0.43},${j.y - 0.27} ${j.x - 0.43},${j.y + 0.27}`}
+                    fill="#e0f2fe" stroke="#0ea5e9" strokeWidth={0.045}
+                  />
+                  {([-0.15, 0, 0.15] as number[]).map((dy) => (
+                    <circle key={dy} cx={j.x - 0.53} cy={j.y + dy} r={0.07} fill="white" stroke="#0ea5e9" strokeWidth={0.04} />
+                  ))}
+                  <line x1={j.x - 0.62} y1={j.y - 0.34} x2={j.x - 0.62} y2={j.y + 0.34} stroke="#0ea5e9" strokeWidth={0.05} />
+                  {([-0.22, -0.08, 0.06, 0.20] as number[]).map((dy) => (
+                    <line key={dy} x1={j.x - 0.62} y1={j.y + dy} x2={j.x - 0.76} y2={j.y + dy - 0.1} stroke="#0ea5e9" strokeWidth={0.035} />
+                  ))}
+                </g>
+              )}
 
               {/* Selection halo */}
               {isSelected && (

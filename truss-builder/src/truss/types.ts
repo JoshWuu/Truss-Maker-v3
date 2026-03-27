@@ -3,7 +3,7 @@ export type MemberId = string
 
 export type Vec2 = { x: number; y: number }
 
-export type SupportType = 'none' | 'pinned' | 'roller'
+export type SupportType = 'none' | 'pinned' | 'roller' | 'roller-x' | 'roller-up' | 'roller-left'
 
 export type Joint = {
   id: JointId

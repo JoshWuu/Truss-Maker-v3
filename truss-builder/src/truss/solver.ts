@@ -60,8 +60,9 @@ function gaussianSolve(A: number[][], b: number[]): { ok: true; x: number[] } | 
 
 function buildUnknowns(truss: Truss): { unknowns: Unknown[]; ok: true } | { ok: false; reason: string } {
   const pinned = truss.joints.filter((j) => j.support === 'pinned')
-  const roller = truss.joints.filter((j) => j.support === 'roller')
-  if (pinned.length !== 1 || roller.length !== 1) {
+  const rollerY = truss.joints.filter((j) => j.support === 'roller' || j.support === 'roller-up')
+  const rollerX = truss.joints.filter((j) => j.support === 'roller-x' || j.support === 'roller-left')
+  if (pinned.length !== 1 || rollerY.length + rollerX.length !== 1) {
     return { ok: false, reason: 'Need exactly 1 pinned + 1 roller support.' }
   }
 
@@ -69,7 +70,11 @@ function buildUnknowns(truss: Truss): { unknowns: Unknown[]; ok: true } | { ok: 
   for (const mem of truss.members) unknowns.push({ kind: 'member', memberId: mem.id })
   unknowns.push({ kind: 'rx', jointId: pinned[0]!.id })
   unknowns.push({ kind: 'ry', jointId: pinned[0]!.id })
-  unknowns.push({ kind: 'ry', jointId: roller[0]!.id })
+  if (rollerY.length === 1) {
+    unknowns.push({ kind: 'ry', jointId: rollerY[0]!.id })
+  } else {
+    unknowns.push({ kind: 'rx', jointId: rollerX[0]!.id })
+  }
 
   return { ok: true, unknowns }
 }
@@ -144,9 +149,12 @@ export function analyzeTruss(truss: Truss): AnalysisResult {
       const colRy = unknownIndex({ kind: 'ry', jointId: j.id })
       if (colRx >= 0) A[rowFx]![colRx] += 1
       if (colRy >= 0) A[rowFy]![colRy] += 1
-    } else if (j.support === 'roller') {
+    } else if (j.support === 'roller' || j.support === 'roller-up') {
       const colRy = unknownIndex({ kind: 'ry', jointId: j.id })
       if (colRy >= 0) A[rowFy]![colRy] += 1
+    } else if (j.support === 'roller-x' || j.support === 'roller-left') {
+      const colRx = unknownIndex({ kind: 'rx', jointId: j.id })
+      if (colRx >= 0) A[rowFx]![colRx] += 1
     }
   }
 

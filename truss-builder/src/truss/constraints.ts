@@ -15,15 +15,18 @@ export type ConstraintSummary = {
 
 function supportSystemOk(truss: Truss): { ok: boolean; details?: string } {
   const pinned = truss.joints.filter((j) => j.support === 'pinned')
-  const roller = truss.joints.filter((j) => j.support === 'roller')
+  const rollerY = truss.joints.filter((j) => j.support === 'roller' || j.support === 'roller-up')
+  const rollerX = truss.joints.filter((j) => j.support === 'roller-x' || j.support === 'roller-left')
+  const rollerCount = rollerY.length + rollerX.length
 
-  if (pinned.length === 0 && roller.length === 0) {
+  if (pinned.length === 0 && rollerCount === 0) {
     return { ok: false, details: 'Add one pinned and one roller support.' }
   }
-  if (pinned.length !== 1 || roller.length !== 1) {
-    return { ok: false, details: 'MVP expects exactly 1 pinned + 1 roller.' }
+  if (pinned.length !== 1 || rollerCount !== 1) {
+    return { ok: false, details: 'Need exactly 1 pinned + 1 roller support.' }
   }
-  if (pinned[0]!.id === roller[0]!.id) {
+  const rollerJoint = rollerY[0] ?? rollerX[0]
+  if (pinned[0]!.id === rollerJoint!.id) {
     return { ok: false, details: 'Pinned and roller must be on different joints.' }
   }
   return { ok: true }

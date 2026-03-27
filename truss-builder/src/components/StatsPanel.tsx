@@ -56,13 +56,13 @@ export function StatsPanel(props: {
   onPrecisionChange?: (p: PrecisionLevel) => void
   onClose?: () => void
   costRates?: CostRates
+  onUpdateMemberMultiplier?: (memberId: string, multiplier: 1 | 2 | 3) => void
 }) {
   const {
     truss, cost, constraints, analysis, selected, deleteSelected,
     onUpdateJointCoordinate, onAddJoint,
     precision: precisionProp = 3, onPrecisionChange,
-    onClose,
-    costRates,
+    onClose, costRates, onUpdateMemberMultiplier,
   } = props
 
   const [localEditX, setLocalEditX] = useState<string | null>(null)
@@ -392,18 +392,37 @@ export function StatsPanel(props: {
                     </div>
                   ) : selected.memberId ? (
                     <div className="space-y-3">
-                      <div className="text-xs font-semibold text-slate-700">
-                        Member{' '}
-                        <span className="text-indigo-600">
-                          {(() => {
-                            const mem = memberById.get(selected.memberId!)
-                            if (!mem) return selected.memberId
-                            const a = jointById.get(mem.a)?.label ?? '?'
-                            const b = jointById.get(mem.b)?.label ?? '?'
-                            return `${a}–${b}`
-                          })()}
-                        </span>
-                      </div>
+                      {(() => {
+                        const mem = memberById.get(selected.memberId!)
+                        const a = mem ? jointById.get(mem.a)?.label ?? '?' : '?'
+                        const b = mem ? jointById.get(mem.b)?.label ?? '?' : '?'
+                        return (
+                          <>
+                            <div className="text-xs font-semibold text-slate-700">
+                              Member <span className="text-indigo-600">{a}–{b}</span>
+                            </div>
+                            <div className="space-y-1.5">
+                              <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                                Multiplier
+                              </div>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {([1, 2, 3] as const).map((mult) => (
+                                  <Button
+                                    key={mult}
+                                    active={mem?.multiplier === mult}
+                                    onClick={() => selected.memberId && onUpdateMemberMultiplier?.(selected.memberId, mult)}
+                                  >
+                                    {mult}×
+                                  </Button>
+                                ))}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                Capacity: {12 * (mem?.multiplier ?? 1)} kN · Cost: {mem?.multiplier ?? 1}× member rate
+                              </div>
+                            </div>
+                          </>
+                        )
+                      })()}
                       <Button variant="danger" onClick={deleteSelected} className="w-full">
                         <IconTrash className="h-4 w-4" /> Delete Member
                       </Button>
@@ -437,24 +456,27 @@ export function StatsPanel(props: {
                       const a = mem ? jointById.get(mem.a)?.label ?? '?' : '?'
                       const b = mem ? jointById.get(mem.b)?.label ?? '?' : '?'
                       const isTension = f.forcekN >= 0
-                      const tooHigh = Math.abs(f.forcekN) > 12.0000001
+                      const capacity = 12 * (mem?.multiplier ?? 1)
+                      const tooHigh = Math.abs(f.forcekN) > capacity + 0.0000001
                       return (
                         <tr key={f.memberId}>
-                          <td className="px-3 py-2 font-medium text-slate-800">{a}–{b}</td>
+                          <td className="px-3 py-2 font-medium text-slate-800">
+                            {a}–{b}
+                            {mem && mem.multiplier > 1 && (
+                              <span className="ml-1 text-[10px] font-bold text-slate-400">×{mem.multiplier}</span>
+                            )}
+                          </td>
                           <td
                             className={[
                               'px-3 py-2 font-medium',
-                              tooHigh
-                                ? 'text-rose-600'
-                                : isTension
-                                ? 'text-blue-600'
-                                : 'text-emerald-600',
+                              tooHigh ? 'text-rose-600' : isTension ? 'text-blue-600' : 'text-emerald-600',
                             ].join(' ')}
                           >
-                            {isTension ? 'Tension' : 'Compression'}
+                            {isTension ? 'T' : 'C'}
                           </td>
                           <td className="px-3 py-2 text-right font-mono text-slate-800">
-                            {f.forcekN.toFixed(2)}
+                            <div>{f.forcekN.toFixed(2)}</div>
+                            <div className="text-[10px] text-slate-400">/ {capacity} kN</div>
                           </td>
                         </tr>
                       )
