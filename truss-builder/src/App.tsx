@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { ToolsPanel } from './components/ToolsPanel'
 import { StatsPanel } from './components/StatsPanel'
 import { TrussCanvas } from './components/TrussCanvas'
+import { WelcomeModal } from './components/WelcomeModal'
 import type { CostRates, ToolMode, Truss } from './truss/types'
 import { DEFAULT_COST_RATES } from './truss/types'
 import type { StepSize, PrecisionLevel } from './truss/precision'
@@ -14,6 +15,7 @@ import { autoAddMembers } from './truss/autoMembers'
 import { roundToStep } from './truss/precision'
 import { downloadCalculations } from './truss/export'
 import { exportLatexReport } from './truss/latex'
+import type { TrussPreset } from './truss/presets'
 import {
   IconCursor,
   IconCircleDot,
@@ -161,6 +163,8 @@ function App() {
   const [precision, setPrecision] = useState<PrecisionLevel>(3)
   const [costRates, setCostRates] = useState<CostRates>(DEFAULT_COST_RATES)
   const [pdfStatus, setPdfStatus] = useState<string | null>(null)
+  const [showModal, setShowModal] = useState(() => localStorage.getItem('trussbuilder_seen_tutorial') !== '1')
+  const [presetsForceOpen, setPresetsForceOpen] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
   const [selected, setSelected] = useState<{ jointId: string | null; memberId: string | null }>({
     jointId: null,
@@ -347,6 +351,25 @@ function App() {
     commitTruss({ joints: [], members: [], pylonHeightM: truss.pylonHeightM })
   }
 
+  const loadPreset = useCallback((preset: TrussPreset) => {
+    if (truss.joints.length > 0) {
+      if (!window.confirm(`Load "${preset.name}"? This will replace your current design.`)) return
+    }
+    setSelected({ jointId: null, memberId: null })
+    commitTruss(preset.build())
+  }, [truss.joints.length, commitTruss])
+
+  const dismissModal = () => {
+    localStorage.setItem('trussbuilder_seen_tutorial', '1')
+    setShowModal(false)
+  }
+
+  const handleStartPreset = () => {
+    dismissModal()
+    setPresetsForceOpen(true)
+    setMobilePanel('tools')
+  }
+
   const exportCalculations = () => {
     downloadCalculations(truss, analysis, precision)
   }
@@ -367,6 +390,9 @@ function App() {
     exportJson, exportSvg, exportPng, exportCalculations, exportPdfLatex,
     autoMembers, undo, redo, canUndo, canRedo, clearAll,
     pdfStatus,
+    onLoadPreset: loadPreset,
+    presetsForceOpen,
+    onReplayTutorial: () => setShowModal(true),
   }
 
   const statsPanelProps = {
@@ -384,6 +410,10 @@ function App() {
   }
 
   return (
+    <>
+    {showModal && (
+      <WelcomeModal onStartPreset={handleStartPreset} onSkip={dismissModal} />
+    )}
     <div className="h-screen w-screen overflow-hidden bg-slate-100 text-slate-900">
       <div className="flex h-full min-h-0">
 
@@ -453,6 +483,7 @@ function App() {
 
       </div>
     </div>
+    </>
   )
 }
 

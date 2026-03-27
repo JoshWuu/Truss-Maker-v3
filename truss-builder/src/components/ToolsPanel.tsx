@@ -1,7 +1,10 @@
+import { useState, useEffect } from 'react'
 import { Button } from './Button'
 import type { ToolMode, Truss } from '../truss/types'
 import type { StepSize } from '../truss/precision'
 import { STEP_SIZES } from '../truss/precision'
+import { PRESETS } from '../truss/presets'
+import type { TrussPreset } from '../truss/presets'
 import {
   IconCursor,
   IconCircleDot,
@@ -14,6 +17,7 @@ import {
   IconDownload,
   IconTrash,
   IconX,
+  IconChevronDown,
 } from './icons'
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -35,6 +39,77 @@ const TOOL_CONFIG: { mode: ToolMode; label: string; icon: React.ReactNode }[] = 
   { mode: 'support', label: 'Support', icon: <IconTriangleSupport className="w-4 h-4" /> },
   { mode: 'load', label: 'Load', icon: <IconArrowDown className="w-4 h-4" /> },
 ]
+
+const TAG_STYLES: Record<TrussPreset['tag'], string> = {
+  beginner:  'bg-emerald-100 text-emerald-700',
+  efficient: 'bg-sky-100 text-sky-700',
+  example:   'bg-amber-100 text-amber-700',
+}
+
+function TrussPreview({ preset }: { preset: TrussPreset }) {
+  const t = preset.build()
+  if (t.joints.length === 0) return null
+  const xs = t.joints.map((j) => j.x)
+  const ys = t.joints.map((j) => j.y)
+  const minX = Math.min(...xs), maxX = Math.max(...xs)
+  const minY = Math.min(...ys), maxY = Math.max(...ys)
+  const pad = 0.8
+  const vb = `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`
+  return (
+    <svg viewBox={vb} className="w-full h-10" preserveAspectRatio="xMidYMid meet">
+      {t.members.map((mem) => {
+        const a = t.joints.find((j) => j.id === mem.a)!
+        const b = t.joints.find((j) => j.id === mem.b)!
+        return (
+          <line key={mem.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+            stroke="#94a3b8" strokeWidth={0.35} strokeLinecap="round" />
+        )
+      })}
+      {t.joints.map((joint) => (
+        <circle key={joint.id} cx={joint.x} cy={joint.y} r={0.32}
+          fill={joint.support !== 'none' ? '#4f46e5' : '#cbd5e1'} />
+      ))}
+    </svg>
+  )
+}
+
+function PresetsSection({ onLoadPreset, forceOpen }: { onLoadPreset: (p: TrussPreset) => void; forceOpen?: boolean }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => { if (forceOpen) setOpen(true) }, [forceOpen])
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between [touch-action:manipulation]"
+      >
+        <SectionLabel>Preset Trusses</SectionLabel>
+        <IconChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`} />
+      </button>
+      {open && (
+        <div className="space-y-1.5">
+          {PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => onLoadPreset(preset)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 pt-2 pb-2 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50 [touch-action:manipulation]"
+            >
+              <TrussPreview preset={preset} />
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-700">{preset.name}</span>
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize ${TAG_STYLES[preset.tag]}`}>
+                  {preset.tag}
+                </span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-slate-400 leading-tight">{preset.description}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const GRID_OPTIONS: { value: number; label: string }[] = [
   { value: 0.0000001, label: 'Free' },
@@ -64,13 +139,16 @@ export function ToolsPanel(props: {
   canRedo: boolean
   clearAll: () => void
   pdfStatus: string | null
+  onLoadPreset: (preset: TrussPreset) => void
+  presetsForceOpen?: boolean
+  onReplayTutorial?: () => void
   onClose?: () => void
 }) {
   const {
     tool, setTool, gridStepM, setGridStepM, moveStepM, setMoveStepM,
     truss, setPylonHeightM, exportJson, exportSvg, exportPng,
     exportCalculations, exportPdfLatex, autoMembers, undo, redo, canUndo, canRedo,
-    clearAll, pdfStatus, onClose,
+    clearAll, pdfStatus, onLoadPreset, presetsForceOpen, onReplayTutorial, onClose,
   } = props
 
   return (
@@ -81,15 +159,27 @@ export function ToolsPanel(props: {
           <div className="text-sm font-semibold text-slate-900">Truss Builder</div>
           <div className="text-[11px] text-slate-400">built by Waterloo students for Waterloo students</div>
         </div>
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          >
-            <IconX className="h-4 w-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {onReplayTutorial && (
+            <button
+              type="button"
+              onClick={onReplayTutorial}
+              title="Show tutorial"
+              className="rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            >
+              ?
+            </button>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            >
+              <IconX className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-5 p-4">
@@ -105,6 +195,11 @@ export function ToolsPanel(props: {
             </Button>
           </div>
         </div>
+
+        <Divider />
+
+        {/* Preset trusses */}
+        <PresetsSection onLoadPreset={onLoadPreset} forceOpen={presetsForceOpen} />
 
         <Divider />
 
